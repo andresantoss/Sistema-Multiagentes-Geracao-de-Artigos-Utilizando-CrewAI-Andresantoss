@@ -26,7 +26,7 @@ def create_crew(topic: str):
         raise ValueError("Erro: Chave GEMINI_API_KEY não encontrada no .env!")
 
     # Define qual modelo LLM usar (formato provedor/modelo) 
-    llm_model_name = "gemini/gemini-pro" 
+    llm_model_name = "gemini/gemini-2.0-flash" 
 
     # --- Cria os Agentes --- 
     researcher = Agent(
@@ -73,7 +73,6 @@ def create_crew(topic: str):
         tasks=[research_task, write_task],
         process=Process.sequential, # Tarefas executadas em ordem
         verbose=True, 
-        # llm=llm_model_name # LLM já definido nos agentes
     )
     
     # Inicia a execução da Crew com o tópico fornecido

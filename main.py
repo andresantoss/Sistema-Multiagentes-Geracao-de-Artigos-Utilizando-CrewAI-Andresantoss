@@ -17,11 +17,18 @@ async def generate_article_endpoint(input: TopicInput):
     """
     Recebe um tópico e retorna um artigo completo gerado pela CrewAI.
     """
-    # A função create_crew já retorna o objeto Pydantic
-    # que o FastAPI converterá automaticamente em JSON.
-    result = create_crew(input.topic)
-    return result
+    crew_result = create_crew(input.topic) 
+    # Extrai o objeto Pydantic de dentro do resultado da Crew
+    article_output = crew_result.pydantic 
+    return article_output
 
 # Comando para rodar a API (execute no terminal):
-# uvicorn main:app --reload
+
+# Ative o Ambiente Virtual Este é o passo mais importante. Para "ligar" o ambiente, execute o seguinte comando. (Note que a barra é invertida \ no Windows):
+# venv\Scripts\activate
+
+# Para Desativar: Quando terminar de trabalhar, basta digitar
+# deactivate
+
+# python -m uvicorn main:app --reload
 # http://127.0.0.1:8000/docs
