@@ -47,10 +47,6 @@ Este projeto é um sistema de automação de conteúdo que usa agentes de IA (Cr
     ```
 
 5.  **Crie o Arquivo `.env`:**
-    * Copie o arquivo de exemplo:
-        * **Windows (cmd):** `copy .env.example .env`
-        * **Windows (PowerShell):** `Copy-Item .env.example .env`
-        * **Linux/macOS:** `cp .env.example .env`
     * Abra o arquivo `.env` e preencha as variáveis:
         * `GEMINI_API_KEY`: Cole sua chave da API do Google Gemini.
             * **Obtenha aqui:** [Google AI Studio](https://aistudio.google.com/app/apikey) (Clique em "Create API key").
