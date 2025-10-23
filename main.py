@@ -24,3 +24,4 @@ async def generate_article_endpoint(input: TopicInput):
 
 # Comando para rodar a API (execute no terminal):
 # uvicorn main:app --reload
+# http://127.0.0.1:8000/docs
