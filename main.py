@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from src.crew_factory import create_crew, ArticleOutput # Importe o Pydantic model
 
 app = FastAPI(
-    title="Sistema Multiagente para Geração de Artigos com CrewAI",
+    title="API Sistema Multiagente para Geração de Artigos com CrewAI",
     description="""Este projeto utiliza CrewAI para criar um sistema multiagente que gera artigos para websites. Os agentes usam a API da Wikipedia para pesquisa e contextualização antes de gerar o conteúdo.
 
 ## 🎯 Descrição

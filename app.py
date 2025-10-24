@@ -6,7 +6,7 @@ from src.crew_factory import create_crew, ArticleOutput
 st.set_page_config(page_title="Gerador de Artigos CrewAI", layout="wide")
 
 # --- Título e Descrição ---
-st.title("🤖 Gerador de Artigos com CrewAI e Wikipedia")
+st.title("🤖 Sistema Multiagente para Geração de Artigos com CrewAI e Wikipedia")
 st.markdown("""
     Digite um tópico abaixo e clique em 'Gerar Artigo'. 
     A inteligência artificial irá pesquisar na Wikipedia e escrever um artigo sobre o tema.

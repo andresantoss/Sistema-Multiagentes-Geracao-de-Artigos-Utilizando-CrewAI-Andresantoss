@@ -56,7 +56,11 @@ O fluxo é:
             * **Obtenha aqui:** [Google AI Studio](https://aistudio.google.com/app/apikey) (Clique em "Create API key").
         * `WIKIPEDIA_CONTACT_INFO`: Coloque seu email ou a URL do seu GitHub (usado para identificação na API da Wikipedia).
 
-## ▶️ Como Rodar (Interface Web com Streamlit)
+## ▶️ Como Rodar
+
+Existem duas formas de executar a aplicação:
+
+**Opção 1: Interface Web (Streamlit - Recomendado para Uso Direto)**
 
 1.  **Ative o Ambiente Virtual** (se não estiver ativo):
     * Windows: `venv\Scripts\activate`
@@ -66,24 +70,33 @@ O fluxo é:
     ```bash
     streamlit run app.py
     ```
-    * O Streamlit iniciará um servidor local e abrirá automaticamente uma nova aba no seu navegador com a interface do aplicativo (geralmente em `http://localhost:8501`).
+    * O Streamlit iniciará um servidor local e abrirá automaticamente uma nova aba no seu navegador (geralmente em `http://localhost:8501`).
 
 3.  **Use a Interface:**
     * Digite o tópico desejado no campo de texto.
     * Clique no botão "Gerar Artigo".
-    * Aguarde enquanto a CrewAI trabalha (você verá uma mensagem de "carregando" e os logs detalhados aparecerão no terminal onde você iniciou o Streamlit).
-    * O artigo gerado será exibido diretamente na página web.
+    * Aguarde o resultado. O artigo gerado será exibido na página.
+
+**Opção 2: API Backend (FastAPI/Uvicorn - Para Testes ou Integração)**
+
+1.  **Ative o Ambiente Virtual** (se não estiver ativo):
+    * Windows: `venv\Scripts\activate`
+    * Linux/macOS: `source venv/bin/activate`
+
+2.  **Inicie o Servidor da API:**
+    Use o Uvicorn para rodar a aplicação FastAPI definida em `main.py`.
+    ```bash
+    python -m uvicorn main:app --reload
+    ```
+    * `main:app`: Indica ao Uvicorn para procurar o objeto `app` dentro do arquivo `main.py`.
+    * `--reload`: Faz o servidor reiniciar automaticamente se você salvar alterações nos arquivos Python (ótimo para desenvolvimento).
+    * O servidor estará rodando em `http://127.0.0.1:8000`.
+
+3.  **Acesse a Documentação da API:**
+    * Abra seu navegador em: **[http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)**
+    * Use a interface Swagger UI para enviar requisições `POST` para o endpoint `/generate-article/` com o tópico no corpo da requisição (JSON).
 
 ## ⏹️ Para Parar
 
-1.  **Pare a Aplicação Streamlit:** Pressione `CTRL+C` no terminal onde o `streamlit run` está executando.
+1.  **Pare o Servidor (Streamlit ou Uvicorn):** Pressione `CTRL+C` no terminal onde o servidor está executando.
 2.  **Desative o Ambiente Virtual:** Digite `deactivate` no terminal.
-
-**(Opcional: Rodar a API Backend Diretamente)**
-
-Se você precisar interagir apenas com a API backend (por exemplo, para testes ou integração com outro sistema), você ainda pode usar o Uvicorn:
-
-```bash
-# Ative o venv
-python -m uvicorn main:app --reload
-# Acesse a documentação em [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
