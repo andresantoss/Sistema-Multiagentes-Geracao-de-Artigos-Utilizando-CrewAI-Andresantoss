@@ -1,31 +1,30 @@
 # Sistema Multiagente para Geração de Artigos com CrewAI
 
-Este projeto utiliza CrewAI para criar um sistema multiagente que gera artigos para websites. Os agentes usam a API da Wikipedia para pesquisa e contextualização antes de gerar o conteúdo.
-
 ## 🎯 Descrição
 
-Este projeto é um sistema de automação de conteúdo que usa agentes de IA (CrewAI) para escrever artigos. O fluxo funciona da seguinte forma:
+Este projeto usa agentes de IA (CrewAI) para escrever artigos automaticamente. Você fornece um **tópico** através de uma interface web simples (Streamlit), o sistema pesquisa na **API da Wikipedia** para obter contexto e usa o **Google Gemini** para gerar um artigo de pelo menos 300 palavras, que é exibido diretamente na interface.
 
-1.  Você fornece um **tópico** via API.
-2.  Um agente pesquisa o tópico na **API da Wikipedia** para obter contexto relevante.
-3.  Outro agente usa o **Google Gemini** para escrever um artigo coeso com no mínimo 300 palavras, baseado na pesquisa.
-4.  O resultado final é retornado em formato **JSON**.
+O fluxo é:
+1.  Você digita um **tópico** na interface web.
+2.  Um agente pesquisa o tópico na **API da Wikipedia**.
+3.  Outro agente usa o **Google Gemini** para escrever um artigo (mínimo 300 palavras) baseado na pesquisa.
+4.  O artigo gerado é exibido na interface web.
 
 ## 💻 Tecnologias Utilizadas
 
-* Python
-* CrewAI & CrewAI Tools
-* Google Gemini (API)
-* Wikipedia (API)
-* FastAPI
-* Uvicorn
-* Pydantic
-* Python-dotenv
-* Requests
+* **Python:** Linguagem principal.
+* **CrewAI & CrewAI Tools:** Orquestração dos agentes de IA.
+* **Google Gemini (API):** LLM para geração de texto.
+* **Wikipedia (API):** Fonte de dados para pesquisa.
+* **Streamlit:** Criação da interface web interativa.
+* **Pydantic:** Definição da estrutura de dados do artigo.
+* **Python-dotenv:** Gerenciamento das chaves de API.
+* **Requests:** Requisições HTTP para a API da Wikipedia.
+* *(FastAPI/Uvicorn ainda presentes no código base, mas não são a forma principal de interação)*
 
 ## ⚙️ Como Configurar
 
-1.  **Clone o Repositório:**
+1.  **Baixe o Código:**
     ```bash
     git clone [https://github.com/andresantoss/Sistema-Multiagentes-Geracao-de-Artigos-Utilizando-CrewAI-Andresantoss.git](https://github.com/andresantoss/Sistema-Multiagentes-Geracao-de-Artigos-Utilizando-CrewAI-Andresantoss.git)
     cd Sistema-Multiagentes-Geracao-de-Artigos-Utilizando-CrewAI-Andresantoss
@@ -41,37 +40,50 @@ Este projeto é um sistema de automação de conteúdo que usa agentes de IA (Cr
     * **Linux/macOS:** `source venv/bin/activate`
     *(Seu terminal mostrará `(venv)` na frente do prompt)*
 
-4.  **Instale as Dependências:**
+4.  **Instale as Bibliotecas:**
     ```bash
     pip install -r requirements.txt
     ```
+    *(Isso inclui o Streamlit)*
 
 5.  **Crie o Arquivo `.env`:**
+    * Copie o arquivo de exemplo:
+        * **Windows (cmd):** `copy .env.example .env`
+        * **Windows (PowerShell):** `Copy-Item .env.example .env`
+        * **Linux/macOS:** `cp .env.example .env`
     * Abra o arquivo `.env` e preencha as variáveis:
         * `GEMINI_API_KEY`: Cole sua chave da API do Google Gemini.
             * **Obtenha aqui:** [Google AI Studio](https://aistudio.google.com/app/apikey) (Clique em "Create API key").
-        * `WIKIPEDIA_CONTACT_INFO`: Coloque seu email (usado para identificação na API da Wikipedia).
+        * `WIKIPEDIA_CONTACT_INFO`: Coloque seu email ou a URL do seu GitHub (usado para identificação na API da Wikipedia).
 
-## ▶️ Como Rodar
+## ▶️ Como Rodar (Interface Web com Streamlit)
 
 1.  **Ative o Ambiente Virtual** (se não estiver ativo):
     * Windows: `venv\Scripts\activate`
     * Linux/macOS: `source venv/bin/activate`
 
-2.  **Inicie o Servidor:**
+2.  **Inicie a Aplicação Streamlit:**
     ```bash
-    python -m uvicorn main:app --reload
+    streamlit run app.py
     ```
-    *(Use `--reload` para desenvolvimento; ele reinicia o servidor automaticamente se você alterar o código)*
+    * O Streamlit iniciará um servidor local e abrirá automaticamente uma nova aba no seu navegador com a interface do aplicativo (geralmente em `http://localhost:8501`).
 
-3.  **Acesse a Documentação da API:**
-    * Abra seu navegador em: **[http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)**
-    * Clique no endpoint `POST /generate-article/`, depois em "Try it out".
-    * No "Request body", mude o `"topic"` para o assunto desejado (ex: `"Inteligência Artificial"`).
-    * Clique em "Execute".
-    * Aguarde o resultado aparecer na seção "Response body".
+3.  **Use a Interface:**
+    * Digite o tópico desejado no campo de texto.
+    * Clique no botão "Gerar Artigo".
+    * Aguarde enquanto a CrewAI trabalha (você verá uma mensagem de "carregando" e os logs detalhados aparecerão no terminal onde você iniciou o Streamlit).
+    * O artigo gerado será exibido diretamente na página web.
 
 ## ⏹️ Para Parar
 
-1.  **Pare o Servidor:** Pressione `CTRL+C` no terminal onde o `uvicorn` está rodando.
+1.  **Pare a Aplicação Streamlit:** Pressione `CTRL+C` no terminal onde o `streamlit run` está executando.
 2.  **Desative o Ambiente Virtual:** Digite `deactivate` no terminal.
+
+**(Opcional: Rodar a API Backend Diretamente)**
+
+Se você precisar interagir apenas com a API backend (por exemplo, para testes ou integração com outro sistema), você ainda pode usar o Uvicorn:
+
+```bash
+# Ative o venv
+python -m uvicorn main:app --reload
+# Acesse a documentação em [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
