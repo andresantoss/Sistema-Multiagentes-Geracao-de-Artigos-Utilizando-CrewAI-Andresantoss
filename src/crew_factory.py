@@ -1,82 +1,117 @@
-# Importações necessárias
 import os
 from crewai import Agent, Task, Crew, Process
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from src.tools.wikipedia_tool import WikipediaSearchTool
 from dotenv import load_dotenv
 
-# Define a estrutura da resposta final usando Pydantic 
+# Define o schema de saída do artigo utilizando Pydantic para validação e clareza.
 class ArticleOutput(BaseModel):
-    title: str
-    introduction: str
-    body: str
-    conclusion: str
-    word_count: int
+    title: str = Field(..., description="Título principal do artigo gerado.")
+    introduction: str = Field(..., description="Parágrafo introdutório do artigo.")
+    body: str = Field(..., description="Corpo principal do artigo, com desenvolvimento do tema.")
+    conclusion: str = Field(..., description="Parágrafo de conclusão do artigo.")
+    word_count: int = Field(..., description="Contagem total de palavras no artigo gerado.")
+    source_title: str | None = Field(None, description="Título exato do artigo da Wikipedia utilizado como fonte principal.")
 
-# Instancia a ferramenta de busca na Wikipedia 
+# Instancia a ferramenta Wikipedia para ser utilizada pelos agentes.
 wikipedia_tool = WikipediaSearchTool()
 
-# Função principal que monta e executa a Crew
+# Função que configura e executa a Crew de geração de artigos.
 def create_crew(topic: str):
-    
-    # Carrega a chave da API do arquivo .env 
-    load_dotenv()
+    """
+    Monta e executa uma CrewAI para pesquisar um tópico na Wikipedia e escrever um artigo.
+
+    Args:
+        topic: O tópico/assunto para o artigo.
+
+    Returns:
+        Um objeto ArticleOutput (validado pelo Pydantic) contendo o artigo gerado.
+        
+    Raises:
+        ValueError: Se a chave GEMINI_API_KEY não for encontrada no .env.
+    """
+    load_dotenv() # Carrega variáveis de ambiente do arquivo .env
     api_key = os.getenv("GEMINI_API_KEY") 
-    if not api_key:
+    if not api_key: 
+        # Garante que a chave da API esteja configurada antes de prosseguir.
         raise ValueError("Erro: Chave GEMINI_API_KEY não encontrada no .env!")
 
-    # Define qual modelo LLM usar (formato provedor/modelo) 
-    llm_model_name = "gemini/gemini-2.0-flash" 
+    # Define o modelo LLM a ser usado (formato 'provedor/nome_modelo' para LiteLLM/CrewAI).
+    llm_model_name = "gemini/gemini-2.0-flash" # Confirmado como funcional neste ambiente
 
-    # --- Cria os Agentes --- 
+    # --- Definição dos Agentes ---
     researcher = Agent(
-        role="Pesquisador Sênior", 
-        goal="Achar informações importantes sobre o tópico na Wikipedia.", 
-        backstory="Você é bom em achar fatos corretos na Wikipedia.",
-        verbose=True, 
-        allow_delegation=False, 
-        tools=[wikipedia_tool], 
-        llm=llm_model_name 
+        role="Especialista em Pesquisa Digital",
+        goal=f"Localizar e extrair o conteúdo do artigo mais relevante na Wikipedia sobre '{topic}', incluindo o título exato da fonte.",
+        backstory=(
+            "Mestre em recuperação de informação via Wikipedia API, hábil em encontrar "
+            "artigos pertinentes mesmo com termos de busca imprecisos e em registrar a fonte."
+        ),
+        verbose=True, # Loga as ações e pensamentos do agente.
+        allow_delegation=False, # Mantém o fluxo simples, sem delegação.
+        tools=[wikipedia_tool], # Ferramenta disponível para este agente.
+        llm=llm_model_name # LLM que o agente utilizará.
     )
 
     writer = Agent(
-        role="Escritor de Artigos",
-        goal="Escrever um artigo claro e interessante, com pelo menos 300 palavras, usando a pesquisa.", # 
-        backstory="Você escreve bem, transformando informações em textos fáceis de ler.",
+        role="Redator de Conteúdo Web",
+        goal=(
+            f"Produzir um artigo de blog claro e informativo (mínimo 300 palavras) sobre '{topic}', "
+            f"baseado estritamente na pesquisa fornecida, para um público geral."
+        ), 
+        backstory=(
+            "Escritor experiente na síntese de informações de pesquisa (como extratos da Wikipedia) "
+            "em artigos de blog bem estruturados e acessíveis. Foca em clareza, estrutura e aderência às instruções."
+        ),
         verbose=True,
-        allow_delegation=False,
+        allow_delegation=False, # Focado na tarefa de escrita.
         llm=llm_model_name 
     )
 
-    # --- Cria as Tarefas ---
+    # --- Definição das Tarefas ---
     research_task = Task(
-        description="Encontre informações sobre '{topic}' na Wikipedia.",
-        expected_output="O texto completo encontrado na Wikipedia sobre '{topic}'.",
-        agent=researcher 
+        description=(
+            "Utilize a ferramenta de busca na Wikipedia para obter o conteúdo mais relevante sobre '{topic}'. "
+            "A ferramenta tratará buscas exatas e amplas."
+        ),
+        expected_output=( 
+             "O resultado textual da ferramenta, iniciando com o título da fonte encontrada "
+             "(e.g., '(Fonte Wikipedia: \'Título\')\\n\\n...') seguido pelo extrato ou snippet."
+        ),
+        agent=researcher # Agente designado para esta tarefa.
     )
 
     write_task = Task(
-        description=(
-            "Use a pesquisa sobre '{topic}' para escrever um artigo de blog (mínimo 300 palavras).\n" # 
-            "Organize com: Título, Introdução, Desenvolvimento e Conclusão.\n"
-            "Formate a resposta final como pedido (usando ArticleOutput)." # 
+        # CORREÇÃO: Removidos os asteriscos da formatação da descrição.
+        description=( 
+            "Contexto: Você recebeu um texto prefixado com '(Fonte Wikipedia: \'Título da Fonte\')' contendo informações sobre '{topic}'.\n"
+            "Sua Tarefa:\n"
+            "1. Escreva um artigo de blog original e informativo (mínimo 300 palavras).\n"
+            "2. Estruture com: Título Principal (novo), Introdução, Desenvolvimento, Conclusão.\n"
+            "3. Extraia o 'Título da Fonte' do texto de contexto e preencha o campo 'source_title'.\n"
+            "4. Calcule a contagem de palavras do seu artigo e preencha 'word_count'.\n"
+            "5. Formate a resposta final completa como um JSON seguindo o modelo ArticleOutput.\n"
+            "Restrições: Use apenas a informação fornecida. Não inclua o prefixo '(Fonte Wikipedia:...)' no artigo final."
         ),
-        expected_output="O artigo final formatado como um objeto ArticleOutput (JSON).", # 
+        expected_output=( 
+            "Um objeto JSON válido aderente ao schema ArticleOutput, com todos os campos "
+            "(title, introduction, body, conclusion, word_count, source_title) corretamente preenchidos."
+        ),
         agent=writer,
-        context=[research_task], # Define que esta tarefa usa o resultado da 'research_task'
-        output_pydantic=ArticleOutput # Garante que a saída final siga o modelo Pydantic 
+        context=[research_task], # Depende do output da tarefa anterior.
+        output_pydantic=ArticleOutput # Força a validação e formatação da saída final.
     )
 
-    # --- Monta e Roda a Crew --- 
+    # --- Montagem e Execução da Crew ---
     article_crew = Crew(
         agents=[researcher, writer],
         tasks=[research_task, write_task],
-        process=Process.sequential, # Tarefas executadas em ordem
-        verbose=True, 
+        process=Process.sequential, # Garante a execução ordenada das tarefas.
+        verbose=True, # Habilita logging do fluxo da Crew.
     )
     
-    # Inicia a execução da Crew com o tópico fornecido
+    # Inicia o processo da Crew.
     result = article_crew.kickoff(inputs={'topic': topic})
     
-    # Retorna o resultado final (o artigo formatado)
+    # Retorna o resultado final, que deve ser uma instância de ArticleOutput.
     return result
