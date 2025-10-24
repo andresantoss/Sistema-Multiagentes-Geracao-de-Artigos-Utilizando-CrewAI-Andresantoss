@@ -82,11 +82,10 @@ def create_crew(topic: str):
     )
 
     write_task = Task(
-        # CORREÇÃO: Removidos os asteriscos da formatação da descrição.
         description=( 
-            "Contexto: Você recebeu um texto prefixado com '(Fonte Wikipedia: \'Título da Fonte\')' contendo informações sobre '{topic}'.\n"
+            "Contexto: Você recebeu um texto prefixado com '(Fonte Wikipedia: \'Título\')' contendo informações sobre '{topic}'.\n"
             "Sua Tarefa:\n"
-            "1. Escreva um artigo de blog original e informativo (mínimo 300 palavras).\n"
+            "1. Escreva um artigo de blog original e informativo sobre '{topic} (mínimo 300 palavras).\n"
             "2. Estruture com: Título Principal (novo), Introdução, Desenvolvimento, Conclusão.\n"
             "3. Extraia o 'Título da Fonte' do texto de contexto e preencha o campo 'source_title'.\n"
             "4. Calcule a contagem de palavras do seu artigo e preencha 'word_count'.\n"
@@ -101,7 +100,7 @@ def create_crew(topic: str):
         context=[research_task], # Depende do output da tarefa anterior.
         output_pydantic=ArticleOutput # Força a validação e formatação da saída final.
     )
-
+    
     # --- Montagem e Execução da Crew ---
     article_crew = Crew(
         agents=[researcher, writer],

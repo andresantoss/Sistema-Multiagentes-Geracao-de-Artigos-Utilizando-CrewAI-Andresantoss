@@ -40,9 +40,9 @@ class WikipediaSearchTool(BaseTool):
         # --- 1. Tentativa de Busca Exata (action=query, prop=extracts) ---
         print(f"INFO: Tentando busca exata por '{topic}'...")
         params_extract = {
-            "action": "query",          # Tipo de ação: consulta
+            "action": "query",        # Tipo de ação: consulta
             "prop": "extracts",       # Propriedade a obter: extrato do conteúdo
-            "exlimit": 1,             # Limitar a 1 extrato
+            "exlimit": 1,            # Limitar a 1 extrato
             "explaintext": 1,         # Obter como texto puro
             "titles": topic,          # Título exato a buscar
             "format": "json",         # Formato da resposta

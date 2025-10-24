@@ -50,11 +50,7 @@ Este projeto é um sistema de automação de conteúdo que usa agentes de IA (Cr
     * Abra o arquivo `.env` e preencha as variáveis:
         * `GEMINI_API_KEY`: Cole sua chave da API do Google Gemini.
             * **Obtenha aqui:** [Google AI Studio](https://aistudio.google.com/app/apikey) (Clique em "Create API key").
-<<<<<<< HEAD
         * `WIKIPEDIA_CONTACT_INFO`: Coloque seu email (usado para identificação na API da Wikipedia).
-=======
-        * `WIKIPEDIA_USER_EMAIL`: Coloque seu email (usado para identificação na API da Wikipedia).
->>>>>>> 7b0d62bc4fe9f714318a832afd5153a506221c57
 
 ## ▶️ Como Rodar
 
