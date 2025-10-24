@@ -1,46 +1,40 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException 
 from pydantic import BaseModel
-from src.crew_factory import create_crew, ArticleOutput # Importe o Pydantic model
+# --- VOLTA A IMPORTAR ArticleOutput ---
+from src.crew_factory import create_crew, ArticleOutput 
 
 app = FastAPI(
-    title="API Sistema Multiagente para Geração de Artigos com CrewAI",
-    description="""Este projeto utiliza CrewAI para criar um sistema multiagente que gera artigos para websites. Os agentes usam a API da Wikipedia para pesquisa e contextualização antes de gerar o conteúdo.
+    # --- Usa o Título e Descrição originais ---
+    title="Sistema Multiagente para Geração de Artigos com CrewAI", 
+    description="""Este projeto usa agentes de IA (CrewAI) para escrever artigos automaticamente. Você fornece um tópico através de uma interface web simples (Streamlit), o sistema pesquisa na API da Wikipedia para obter contexto e usa o Google Gemini para gerar um artigo de pelo menos 300 palavras, que é exibido diretamente na interface.
 
-## 🎯 Descrição
+*(Esta API permite a interação programática com o sistema.)*
 
-Este projeto é um sistema de automação de conteúdo que usa agentes de IA (CrewAI) para escrever artigos. O fluxo funciona da seguinte forma:
-
-1.  Você fornece um **tópico** via API.
-2.  Um agente pesquisa o tópico na **API da Wikipedia** para obter contexto relevante.
-3.  Outro agente usa o **Google Gemini** para escrever um artigo coeso com no mínimo 300 palavras, baseado na pesquisa.
-4.  O resultado final é retornado em formato **JSON**.
-
-GitHub: https://github.com/andresantoss/Sistema-Multiagentes-Geracao-de-Artigos-Utilizando-CrewAI-Andresantoss
-"""
+GitHub: [https://github.com/andresantoss/Sistema-Multiagentes-Geracao-de-Artigos-Utilizando-CrewAI-Andresantoss](https://github.com/andresantoss/Sistema-Multiagentes-Geracao-de-Artigos-Utilizando-CrewAI-Andresantoss)
+""" 
 )
 
-# Modelo Pydantic para a requisição da API
+# Modelo de Entrada (inalterado)
 class TopicInput(BaseModel):
     topic: str
 
 # Endpoint da API 
-@app.post("/generate-article/", response_model=ArticleOutput)
+# --- Usa ArticleOutput como response_model ---
+@app.post("/generate-article/", response_model=ArticleOutput) 
 async def generate_article_endpoint(input: TopicInput):
     """
-    Recebe um tópico e retorna um artigo completo gerado pela CrewAI.
-    """
-    crew_result = create_crew(input.topic) 
-    # Extrai o objeto Pydantic de dentro do resultado da Crew
-    article_output = crew_result.pydantic 
-    return article_output
+    Recebe um tópico e retorna um artigo de blog completo (estruturado como JSON) gerado pela CrewAI.
+    """ # Docstring ajustado
+    try:
+        # create_crew agora retorna o objeto Pydantic ArticleOutput
+        article_output = create_crew(input.topic) 
+        return article_output
+    except ValueError as ve: 
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e: 
+        print(f"Erro inesperado no endpoint: {e}") 
+        raise HTTPException(status_code=500, detail=f"Erro interno ao processar a requisição: {e}")
 
-# Comando para rodar a API (execute no terminal):
-
-# Ative o Ambiente Virtual Este é o passo mais importante. Para "ligar" o ambiente, execute o seguinte comando. (Note que a barra é invertida \ no Windows):
-# venv\Scripts\activate
-
-# Para Desativar: Quando terminar de trabalhar, basta digitar
-# deactivate
-
+# Comandos de execução
 # python -m uvicorn main:app --reload
-# http://127.0.0.1:8000/docs
+# [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
