@@ -167,13 +167,32 @@ def create_crew(topic: str) -> ArticleOutput:
         raise ValueError(f"Não foi possível extrair um bloco JSON válido da resposta do agente. Resposta recebida:\n{raw_output}")
 
     try:
-        # Valida a string JSON extraída contra o modelo Pydantic ArticleOutput
-        parsed_output = ArticleOutput.model_validate_json(json_string) 
-        return parsed_output 
-    except ValidationError as e:
-        print(f"--- ERRO DE VALIDAÇÃO PYDANTIC ---\nJSON extraído:\n{json_string}\nErro: {e}")
-        # Levanta um erro mais informativo que será capturado pelo FastAPI/Streamlit
-        raise ValueError(f"O JSON retornado pelo agente não está no formato esperado (ArticleOutput): {e}\nJSON recebido:\n{json_string}") from e
+        # Primeiro, decodifica o JSON em dict para normalizações necessárias
+        data = json.loads(json_string)
     except json.JSONDecodeError as e:
         print(f"--- ERRO DE DECODIFICAÇÃO JSON ---\nTexto após extração:\n{json_string}\nErro: {e}")
         raise ValueError(f"O texto extraído não é um JSON válido: {e}\nTexto recebido:\n{json_string}") from e
+
+    # Normalizações defensivas para lidar com saídas do agente
+    # Se keywords vier como string separada por vírgulas, converte para lista de strings
+    if 'keywords' in data and isinstance(data['keywords'], str):
+        data['keywords'] = [k.strip() for k in data['keywords'].split(',') if k.strip()]
+
+    # Garante que source_title vazio vire null
+    if 'source_title' in data and data['source_title'] == '':
+        data['source_title'] = None
+
+    # Converte word_count para int se o agente retornou como string numérica
+    if 'word_count' in data and isinstance(data['word_count'], str):
+        try:
+            data['word_count'] = int(data['word_count'].strip())
+        except ValueError:
+            pass  # deixa o Pydantic reportar o erro caso não seja um inteiro válido
+
+    try:
+        # Valida o dict normalizado contra o modelo Pydantic ArticleOutput
+        parsed_output = ArticleOutput.model_validate(data)
+        return parsed_output
+    except ValidationError as e:
+        print(f"--- ERRO DE VALIDAÇÃO PYDANTIC ---\nJSON normalizado:\n{json.dumps(data, ensure_ascii=False, indent=2)}\nErro: {e}")
+        raise ValueError(f"O JSON retornado pelo agente não está no formato esperado (ArticleOutput): {e}\nJSON recebido (normalizado):\n{json.dumps(data, ensure_ascii=False, indent=2)}") from e

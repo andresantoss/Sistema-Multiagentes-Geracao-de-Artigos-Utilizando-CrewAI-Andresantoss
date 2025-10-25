@@ -32,19 +32,19 @@ if st.button("Gerar Artigo", type="primary"):
                 if article.source_title:
                      st.caption(f"Fonte principal da Wikipedia: {article.source_title}") 
                 
-                st.markdown("### Resumo (Summary)") 
+                st.markdown("### Resumo") 
                 st.write(article.summary) 
 
-                st.markdown("### Palavras-Chave (Keywords)")
+                st.markdown("### Palavras-Chave")
                 st.write(", ".join(article.keywords)) 
                 
-                st.markdown("### Introdução (Introduction)")
+                st.markdown("### Introdução")
                 st.write(article.introduction) 
                     
-                st.markdown("### Desenvolvimento (Development/Body)")
+                st.markdown("### Desenvolvimento")
                 st.write(article.development) 
                     
-                st.markdown("### Conclusões (Conclusions)")
+                st.markdown("### Conclusões")
                 st.write(article.conclusions) 
                     
                 st.divider() 
