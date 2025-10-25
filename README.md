@@ -10,12 +10,6 @@ O fluxo é:
 3.  Outro agente usa o **Google Gemini** para escrever um artigo (mínimo 300 palavras) baseado na pesquisa.
 4.  O artigo gerado é exibido na interface web.
 
-## 🔗 Link de Visualização (ClickUp)
-
-* Acompanhe o progresso e visualize tarefas do projeto no ClickUp:
-* https://app.clickup.com/90132654658/v/b/li/901321622552
-
-
 ## 💻 Tecnologias Utilizadas
 
 * **Python:** Linguagem principal.
