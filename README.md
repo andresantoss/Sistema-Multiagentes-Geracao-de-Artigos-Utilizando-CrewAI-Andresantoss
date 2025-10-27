@@ -4,6 +4,18 @@
 
 Este projeto usa agentes de IA (CrewAI) para escrever artigos automaticamente. Você fornece um **tópico** através de uma interface web simples (Streamlit), o sistema pesquisa na **API da Wikipedia** para obter contexto e usa o **Google Gemini** para gerar um artigo de pelo menos 300 palavras, que é exibido diretamente na interface.
 
+## Funcionalidades Principais
+
+* **Geração de Artigo Estruturado:** O artigo final não é apenas um bloco de texto. Ele é gerado seguindo uma estrutura de dados Pydantic, garantindo que o resultado seja um JSON válido com seções definidas (introdução, desenvolvimento, conclusão, palavras-chave, etc.).
+
+* **Busca Robusta na Wikipedia:** O projeto utiliza uma ferramenta customizada (`WikipediaSearchTool`) que vai além de uma simples busca. Ela implementa uma lógica de *fallback* em 4 etapas para encontrar uma imagem de capa válida, priorizando thumbnails e imagens de alta qualidade.
+
+* **Validação e Resiliência (Auto-Correção):** O sistema valida ativamente a saída do LLM. Mais importante, se um artigo gerado não atingir o requisito mínimo de 300 palavras, o sistema não falha. Ele automaticamente executa um **loop de retentativa** (até 3 vezes) para dar à IA uma nova chance de gerar um artigo que cumpra os requisitos.
+
+* **Interface Dupla (Uso e API):** O projeto é exposto de duas formas:
+    1.  Uma interface web amigável com **Streamlit** para uso direto.
+    2.  Um endpoint de API com **FastAPI** para integração programática ou testes.
+
 O fluxo é:
 1.  Você digita um **tópico** na interface web.
 2.  Um agente pesquisa o tópico na **API da Wikipedia**.
