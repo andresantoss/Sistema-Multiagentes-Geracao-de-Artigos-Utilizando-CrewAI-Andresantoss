@@ -1,13 +1,17 @@
 import os
-from crewai import Agent, Task, Crew, Process
-from pydantic import BaseModel, Field, ValidationError
-from src.tools.wikipedia_tool import WikipediaSearchTool
-from dotenv import load_dotenv
-from typing import Union, List 
-import json 
-import re 
+import re
+import json
+import locale
+from datetime import datetime
+from typing import Union, List
 
-# Define o schema de saída do artigo utilizando Pydantic para validação e clareza.
+from dotenv import load_dotenv
+from pydantic import BaseModel, Field, ValidationError
+
+from crewai import Agent, Task, Crew, Process
+from src.tools.wikipedia_tool import WikipediaSearchTool
+
+# --- Schema de Saída (Pydantic) ---
 class ArticleOutput(BaseModel):
     """
     Define a estrutura de dados esperada para o artigo gerado, 
@@ -17,38 +21,34 @@ class ArticleOutput(BaseModel):
     title: str = Field(..., description="The main title of the generated article.")
     summary: str = Field(..., description="Abstract in Portuguese (max 250 words), presenting objective, method, and main conclusions.") 
     keywords: List[str] = Field(..., min_length=3, max_length=5, description="List of 3 to 5 relevant keywords in Portuguese.") 
-    introduction: str = Field(..., description="Introduction: Presents the topic ('{topic}'), its relevance, objectives, and structure.") 
-    development: str = Field(..., description="Development: Main body, logically presenting the Wikipedia research with formal language.") 
-    conclusions: str = Field(..., description="Conclusions: Brief final section, summarizing main points and objectives.") 
-    source_title: Union[str, None] = Field(None, description="Exact title(s) of the Wikipedia article(s) used as the main source.")
-    word_count: int = Field(..., description="Total word count of the generated text fields (title, summary, introduction, development, conclusions).")
+    introduction_subtitle: str = Field(..., description="Subtítulo da introdução.")
+    introduction_content: str = Field(..., description="Texto da introdução.")
+    development_subtitle: str = Field(..., description="Subtítulo do desenvolvimento.")
+    development_content: str = Field(..., description="Texto do desenvolvimento.")
+    conclusion_subtitle: str = Field(..., description="Subtítulo da conclusão.")
+    conclusion_content: str = Field(..., description="Texto da conclusão.")
+    source_title: Union[str, None] = Field(None, description="Título da fonte principal (Wikipedia).")
+    source_url: Union[str, None] = Field(None, description="URL completa da fonte principal.")
+    access_date: Union[str, None] = Field(None, description="Data de acesso no formato 'DD de MÊS de AAAA'.")
+    word_count: int = Field(..., description="Contagem total de palavras (campos textuais).")
 
-# Instancia a ferramenta Wikipedia para ser utilizada pelos agentes.
+# Instancia a ferramenta Wikipedia (wrapper local)
 wikipedia_tool = WikipediaSearchTool()
 
 def extract_json_from_text(text: str) -> str | None:
     """
-    Tenta extrair um bloco de código JSON de uma string de texto.
-    Procura por blocos delimitados por ```json ... ``` ou, como fallback,
-    o primeiro JSON válido encontrado.
-
-    Args:
-        text: A string de texto potencialmente contendo JSON.
-
-    Returns:
-        A string JSON extraída ou None se nenhum JSON válido for encontrado.
+    Extrai o primeiro objeto JSON encontrado no texto.
+    Aceita blocos ```json { ... } ``` ou apenas {...}.
+    Retorna a string JSON (com chaves) ou None se não encontrar.
     """
-    # Prioriza a busca por blocos JSON explicitamente marcados
-    match_markdown = re.search(r'```json\s*(\{.*?\})\s*```', text, re.DOTALL)
-    if match_markdown:
-        return match_markdown.group(1).strip() # .strip() para remover espaços extras
-    
-    # Fallback: Tenta encontrar o primeiro objeto JSON válido na string
-    # Cuidado: Isso pode capturar JSONs parciais ou incorretos se houver múltiplos na string.
-    match_bare = re.search(r'(\{.*?\})', text, re.DOTALL)
-    if match_bare:
-         return match_bare.group(1).strip()
-         
+    if not text:
+        return None
+    match_md = re.search(r'```json\s*(\{.*?\})\s*```', text, re.DOTALL)
+    if match_md:
+        return match_md.group(1).strip()
+    match_raw = re.search(r'(\{.*?\})', text, re.DOTALL)
+    if match_raw:
+        return match_raw.group(1).strip()
     return None
 
 # Função principal que configura e executa a Crew de geração de artigos.
@@ -68,131 +68,151 @@ def create_crew(topic: str) -> ArticleOutput:
                     se a Crew não retornar um resultado bruto,
                     se nenhum JSON puder ser extraído da resposta do agente,
                     se o JSON extraído for inválido, ou
-                    se o JSON não puder ser validado pelo modelo Pydantic.
+                    se o JSON não puder ser validado pelo modelo Pydantic,
+                    ou se o artigo gerado não atingir 300 palavras.
     """
     load_dotenv() 
     api_key = os.getenv("GEMINI_API_KEY") 
     if not api_key: 
         raise ValueError("Erro: Chave GEMINI_API_KEY não encontrada no .env!")
 
-    # Modelo LLM a ser usado
     llm_model_name = "google/gemini-2.0-flash" 
+
+    try:
+        locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
+    except locale.Error:
+        try:
+            locale.setlocale(locale.LC_TIME, 'Portuguese_Brazil.1252') # Windows fallback
+        except locale.Error:
+            print("AVISO: locale pt_BR não disponível, usando formatação padrão do sistema.")
+
+    current_date_str = datetime.now().strftime("%d de %B de %Y").lower()
 
     # --- Definição dos Agentes ---
     researcher = Agent(
         role="Assistente de Pesquisa Acadêmica", 
-        goal=f"Coletar da Wikipedia e sintetizar os fatos/conceitos chave sobre '{topic}' para a redação de um artigo estruturado.", 
-        backstory=(
-            "Especialista em extrair e resumir informações essenciais da Wikipedia, "
-            "focando na precisão factual e registrando a fonte." 
-        ),
+        goal=f"Coletar da Wikipedia e sintetizar fatos/conceitos chave sobre '{topic}'.", 
+        backstory="Especialista em extrair e resumir informações essenciais da Wikipedia, registrando a fonte.",
         verbose=True, 
         allow_delegation=False, 
         tools=[wikipedia_tool], 
         llm=llm_model_name,
-        max_iter=5 # Limita iterações para evitar loops excessivos
+        max_iter=5,
     )
 
     writer = Agent(
         role="Redator Técnico Estruturado", 
         goal=(
-            f"Gerar o conteúdo textual para as seções de um artigo sobre '{topic}' (title, summary, keywords, introduction, development, conclusions, source_title), "
-            f"baseado no resumo da pesquisa e formatado como um objeto JSON." 
+            f"Gerar o conteúdo textual para um artigo sobre '{topic}', "
+            f"garantindo que o conteúdo principal (summary, introduction, development, conclusions) **some no mínimo 300 palavras**." # REQUISITO ADICIONADO 
         ), 
         backstory=(
-            "Você é um redator técnico que organiza informações de pesquisa em uma estrutura JSON pré-definida, "
-            "seguindo um estilo formal e objetivo similar ao acadêmico, usando chaves em INGLÊS." 
+            "Redator técnico que organiza informações em JSON com chaves em INGLÊS. "
+            "Foco em precisão, estilo objetivo, formato validável e **cumprimento rigoroso de contagem mínima de palavras**." # BACKSTORY ATUALIZADO
         ),
         verbose=True,
         allow_delegation=False,
-        llm=llm_model_name 
+        llm=llm_model_name,
     )
 
-    # --- Definição das Tarefas ---
+    # --- Tarefas ---
     research_task = Task(
-        description=( 
-            "1. Use a ferramenta Wikipedia para encontrar informações sobre '{topic}'.\n"
-            "2. Resuma os principais fatos/conceitos encontrados.\n" 
-            "3. Inclua o(s) título(s) da(s) fonte(s) (prefixo '(Fonte Wikipedia: ...)') no início."
-        ),
-        expected_output=( 
-             "Um resumo conciso sobre '{topic}', baseado na Wikipedia, "
-             "iniciando com o(s) título(s) da(s) fonte(s) (prefixo '(Fonte Wikipedia: ...)' )."
-        ),
-        agent=researcher 
-    )
-
-    # Tarefa de Escrita: Pede JSON com chaves em inglês E word_count
-    write_task = Task(
-        description=( 
-            "Contexto: Você recebeu um resumo factual sobre '{topic}' vindo da Wikipedia, prefixado com '(Fonte Wikipedia: \'Título da Fonte\')'.\n"
-            "Sua Tarefa:\n"
-            "Com base nesse contexto, gere o conteúdo textual para CADA UMA das seguintes chaves (em INGLÊS):\n"
-            "- title: Crie um título formal para o artigo sobre '{topic}'.\n"
-            "- summary: Elabore o resumo (máx 250 palavras) - objetivo, método (revisão), conclusões.\n"
-            "- keywords: Liste de 3 a 5 palavras-chave relevantes em português.\n"
-            "- introduction: Escreva a introdução - apresente '{topic}', relevância, objetivos, estrutura.\n"
-            "- development: Elabore o corpo principal, expandindo os fatos do contexto com linguagem formal.\n"
-            "- conclusions: Escreva a conclusão breve, recapitulando os pontos.\n"
-            "- source_title: Extraia o 'Título da Fonte' principal do texto de contexto. O valor DEVE ser uma **única string** (não uma lista), ou `null` se nenhum título for encontrado.\n"
-            "- word_count: **Calcule** a contagem total de palavras dos campos **title, summary, introduction, development, e conclusions** combinados e insira o número aqui.\n" 
-            "**Formato Final OBRIGATÓRIO:** Sua resposta DEVE ser APENAS o objeto JSON, delimitado por ```json e ```, usando EXATAMENTE as chaves em INGLÊS listadas acima (incluindo word_count)."
+        description=(
+            "1) Use a ferramenta Wikipedia para coletar informações sobre '{topic}'.\n"
+            "2) Resuma os principais fatos (máx 2-3 parágrafos).\n"
+            "3) Prefixe o resumo com '(Fonte Wikipedia: <Título da Fonte>)'."
         ),
         expected_output=(
-            "Um *string* JSON válido, delimitado por ```json e ```, contendo as chaves em INGLÊS "
-            "(title, summary, keywords, introduction, development, conclusions, source_title, **word_count**) " # Adicionado word_count
-            "preenchidas com o conteúdo apropriado sobre '{topic}'. O campo 'source_title' deve ser uma string ou null, e 'word_count' deve ser um número inteiro."
+            "Resumo factual conciso (máx 2-3 parágrafos) sobre '{topic}', iniciando com '(Fonte Wikipedia: <Título>)'."
         ),
-        agent=writer,
-        context=[research_task], 
+        agent=researcher,
     )
 
-    # --- Montagem e Execução da Crew ---
+    write_task = Task(
+        description=(
+            "Contexto: você recebeu o resumo prefixado com '(Fonte Wikipedia: \"Título da Fonte\")'.\n"
+            f"Data de Acesso: {current_date_str}\n"
+            "Tarefa: Gere APENAS um objeto JSON (delimitado por ```json ... ``` se possível) contendo as chaves em INGLÊS:\n"
+            "title, summary, keywords (3-5), introduction_subtitle, introduction_content,\n"
+            "development_subtitle, development_content, conclusion_subtitle, conclusion_content,\n"
+            "source_title, source_url, access_date (use a data fornecida), word_count.\n"
+            "**REQUISITO OBRIGATÓRIO:** A soma das palavras dos campos 'summary', 'introduction_content', 'development_content' e 'conclusion_content' **DEVE SER NO MÍNIMO 300 PALAVRAS**. Elabore o 'development_content' o suficiente para atingir essa meta.\n"
+            "Calcule word_count como soma das palavras nos campos textuais mencionados.\n"
+            "Responda somente o JSON final."
+        ),
+        expected_output=(
+             "JSON válido com as chaves listadas preenchidas. "
+             "O conteúdo textual principal (summary, introduction_content, development_content, conclusions) **DEVE SOMAR no mínimo 300 palavras**." 
+        ),
+        agent=writer,
+        context=[research_task],
+    )
+
+    # --- Montagem da Crew e execução ---
     article_crew = Crew(
         agents=[researcher, writer],
         tasks=[research_task, write_task],
-        process=Process.sequential, 
-        verbose=True, # Mantém logs detalhados da execução da Crew
+        process=Process.sequential,
+        verbose=True,
     )
-    
+
     crew_result = article_crew.kickoff(inputs={'topic': topic})
 
-    # --- Parsing e Validação Manual da Saída ---
+    # Valida existência de saída bruta
     if not crew_result or not hasattr(crew_result, 'raw') or not crew_result.raw:
-         raise ValueError("A CrewAI não retornou um resultado bruto válido da última tarefa.")
+         raise ValueError("A CrewAI não retornou um resultado bruto válido.")
+
     raw_output = crew_result.raw
 
+    # Extrai bloco JSON do texto bruto
     json_string = extract_json_from_text(raw_output)
     if not json_string:
-        raise ValueError(f"Não foi possível extrair um bloco JSON válido da resposta do agente. Resposta recebida:\n{raw_output}")
+        raise ValueError(f"Não foi possível extrair um JSON válido da resposta do agente.\nResposta recebida:\n{raw_output}")
 
+    # Decodifica JSON e aplica normalizações defensivas
     try:
-        # Primeiro, decodifica o JSON em dict para normalizações necessárias
         data = json.loads(json_string)
     except json.JSONDecodeError as e:
-        print(f"--- ERRO DE DECODIFICAÇÃO JSON ---\nTexto após extração:\n{json_string}\nErro: {e}")
-        raise ValueError(f"O texto extraído não é um JSON válido: {e}\nTexto recebido:\n{json_string}") from e
+        raise ValueError(f"Erro ao decodificar JSON extraído: {e}\nJSON extraído:\n{json_string}") from e
 
-    # Normalizações defensivas para lidar com saídas do agente
-    # Se keywords vier como string separada por vírgulas, converte para lista de strings
+    # Normalizações (código original mantido)
     if 'keywords' in data and isinstance(data['keywords'], str):
         data['keywords'] = [k.strip() for k in data['keywords'].split(',') if k.strip()]
-
-    # Garante que source_title vazio vire null
+    for k in ['introduction_subtitle', 'development_subtitle', 'conclusion_subtitle']:
+        if k in data and isinstance(data[k], str):
+            data[k] = data[k].strip()
     if 'source_title' in data and data['source_title'] == '':
         data['source_title'] = None
-
-    # Converte word_count para int se o agente retornou como string numérica
     if 'word_count' in data and isinstance(data['word_count'], str):
         try:
             data['word_count'] = int(data['word_count'].strip())
         except ValueError:
-            pass  # deixa o Pydantic reportar o erro caso não seja um inteiro válido
+            pass
 
+    # Validação final com Pydantic
     try:
-        # Valida o dict normalizado contra o modelo Pydantic ArticleOutput
         parsed_output = ArticleOutput.model_validate(data)
+        
+        # Verificação manual da contagem de palavras pós-validação Pydantic
+        real_word_count = (
+            len(parsed_output.summary.split()) +
+            len(parsed_output.introduction_content.split()) +
+            len(parsed_output.development_content.split()) +
+            len(parsed_output.conclusion_content.split())
+        )
+        
+        if real_word_count < 300:
+            # Lança um erro se o agente não cumpriu o requisito mínimo 
+            raise ValueError(
+                f"Erro de Validação Pós-Geração: O agente falhou em atender o requisito de 300 palavras. "
+                f"Gerado apenas {real_word_count} palavras."
+            )
+        
+        # Se a contagem estiver ok, retorna o objeto validado
         return parsed_output
+    
     except ValidationError as e:
-        print(f"--- ERRO DE VALIDAÇÃO PYDANTIC ---\nJSON normalizado:\n{json.dumps(data, ensure_ascii=False, indent=2)}\nErro: {e}")
-        raise ValueError(f"O JSON retornado pelo agente não está no formato esperado (ArticleOutput): {e}\nJSON recebido (normalizado):\n{json.dumps(data, ensure_ascii=False, indent=2)}") from e
+        raise ValueError(
+            "O JSON retornado pelo agente não está no formato esperado (ArticleOutput). "
+            f"Detalhes: {e}\nJSON normalizado recebido:\n{json.dumps(data, ensure_ascii=False, indent=2)}"
+        ) from e
