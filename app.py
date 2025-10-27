@@ -8,7 +8,7 @@ st.set_page_config(page_title="Sistema Multiagente para Geração de Artigos com
 # --- CSS Customizado (CORREÇÃO ÂNCORA + CENTRALIZAÇÃO INFOBOX) ---
 st.markdown("""
     <style>
-        /* ÂNCORA  */
+        /* anchor  */
         div[id] {
             scroll-margin-top: 100px; 
         }
@@ -67,11 +67,11 @@ if st.button("Gerar Artigo", type="primary"):
                 article: ArticleOutput = create_crew(topic) 
                 
                 # Define âncoras para o sumário (TOC)
-                anchor_top = "top"
+                anchor_top = "inicio"
                 anchor_summary = "resumo"
-                anchor_intro = "introducao"
-                anchor_dev = "desenvolvimento"
-                anchor_conc = "conclusao"
+                anchor_intro = article.introduction_subtitle
+                anchor_dev = article.development_subtitle
+                anchor_conc = article.conclusion_subtitle
                 anchor_notes = "notas"
                 anchor_refs = "referencias"
 
@@ -184,3 +184,6 @@ if st.button("Gerar Artigo", type="primary"):
 # --- Rodapé (SEMPRE VISÍVEL) ---
 st.sidebar.info("Desenvolvido por Andresantoss")
 st.sidebar.markdown("GitHub: [Repositório do Projeto](https://github.com/andresantoss/Sistema-Multiagentes-Geracao-de-Artigos-Utilizando-CrewAI-Andresantoss)")
+
+# Comandos de execução
+# streamlit run app.py

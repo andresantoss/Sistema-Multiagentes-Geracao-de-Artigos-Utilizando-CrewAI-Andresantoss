@@ -37,4 +37,4 @@ async def generate_article_endpoint(input: TopicInput):
 
 # Comandos de execução
 # python -m uvicorn main:app --reload
-# [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+# http://127.0.0.1:8000/docs
