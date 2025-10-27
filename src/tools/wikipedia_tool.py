@@ -3,7 +3,7 @@ from crewai.tools import BaseTool
 from dotenv import load_dotenv
 import os 
 import re 
-import json # Necessário para empacotar a saída
+import json 
 
 class WikipediaSearchTool(BaseTool):
     """
@@ -15,18 +15,17 @@ class WikipediaSearchTool(BaseTool):
     description: str = ("Busca por um tópico na Wikipedia. Retorna um JSON string com o extrato do artigo, "
                       "o título da fonte, a URL da imagem principal e uma legenda para a imagem.")
 
-    # --- Funções auxiliares movidas para dentro da classe ---
-
     def _fetch_wikipedia_data(self, search_title: str, headers: dict) -> tuple[dict | None, str | None]:
         """
-        Tenta buscar o extrato E a imagem principal de um título específico.
+        Tenta buscar o extrato E a imagem principal (thumbnail) de um título específico.
         Retorna um dicionário com os dados ou None, e uma mensagem de erro (se houver).
         """
         url = "https://pt.wikipedia.org/w/api.php"
         params = {
             "action": "query",
             "prop": "extracts|pageimages", # PEDE EXTRATO E IMAGEM
-            "piprop": "original",         # Pede a URL da imagem original (alta resolução)
+            "piprop": "thumbnail",        # Pede um thumbnail (web-friendly, ex: .jpg, .png)
+            "pithumbsize": 600,           # Pede um thumbnail com 600px de largura
             "exlimit": 1,
             "explaintext": 1,
             "titles": search_title,
@@ -45,7 +44,7 @@ class WikipediaSearchTool(BaseTool):
 
             page_id = next(iter(pages))
             if page_id == "-1": 
-                return None, None # Título exato não encontrado (não é um erro, apenas não encontrado)
+                return None, None # Título exato não encontrado
 
             page_data = pages[page_id]
             extract = page_data.get("extract") 
@@ -53,12 +52,14 @@ class WikipediaSearchTool(BaseTool):
             if not extract: 
                 return None, f"Erro: Artigo exato '{search_title}' encontrado, mas sem conteúdo (extrato)."
 
-            # Extrai informações da imagem (se existirem)
-            image_url = page_data.get("original", {}).get("source")
+            # --- CORREÇÃO DE IMAGEM ---
+            # Extrai informações da imagem (agora do 'thumbnail')
+            image_url = page_data.get("thumbnail", {}).get("source")
+            # --- FIM DA CORREÇÃO ---
+            
             # Usa o nome do 'pageimage' (ex: Ficheiro:...) como legenda
             image_caption = page_data.get("pageimage") 
 
-            # Retorna um dicionário com todos os dados
             return {
                 "source_title": search_title,
                 "extract": extract,
@@ -108,18 +109,17 @@ class WikipediaSearchTool(BaseTool):
             contact_info = "https://github.com/andresantoss/Sistema-Multiagentes-Geracao-de-Artigos-Utilizando-CrewAI-Andresantoss" 
         headers = {'User-Agent': f'CrewAIAgent/1.0 ({contact_info})'}
         
-        output_data = {} # Dicionário para armazenar o resultado final
+        output_data = {} 
 
-        # 1. Tenta busca exata (que agora retorna dict)
+        # 1. Tenta busca exata
         data_dict, error = self._fetch_wikipedia_data(topic, headers)
         
         if data_dict:
-            # Sucesso na busca exata
             output_data = data_dict
         elif error and "sem conteúdo" not in error: 
-              return json.dumps({"error": error}) # Retorna erro de rede/API
+              return json.dumps({"error": error}) 
               
-        # 2. Se a busca exata falhou (data_dict é None e error é None ou "sem conteúdo"), faz busca ampla
+        # 2. Se a busca exata falhou, faz busca ampla
         else:
             found_title, found_snippet, search_error = self._perform_full_text_search(topic, headers)
             
@@ -127,11 +127,10 @@ class WikipediaSearchTool(BaseTool):
             if not found_title: 
                 return json.dumps({"error": f"A pesquisa ampla na Wikipedia não encontrou artigos relevantes para '{topic}'."})
 
-            # 3. Tenta buscar extrato E IMAGEM do título encontrado na busca ampla
+            # 3. Tenta buscar extrato E IMAGEM do título encontrado
             data_dict_found, final_error = self._fetch_wikipedia_data(found_title, headers) 
 
             if data_dict_found:
-                # Sucesso na busca do artigo encontrado
                 output_data = data_dict_found
             else:
                 # Fallback: Usa o snippet (sem imagem)
@@ -143,7 +142,7 @@ class WikipediaSearchTool(BaseTool):
                     "image_caption": "Snippet da Busca (sem imagem)"
                 }
                 if final_error:
+                    # Log silencioso no console do servidor, não retorna ao agente
                     print(f"AVISO: Falha ao buscar extrato/imagem de '{found_title}': {final_error}. Usando snippet.")
         
-        # Retorna o dicionário de dados como um JSON string
         return json.dumps(output_data, ensure_ascii=False)
