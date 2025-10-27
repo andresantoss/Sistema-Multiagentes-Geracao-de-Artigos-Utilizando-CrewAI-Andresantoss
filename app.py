@@ -1,44 +1,52 @@
 import streamlit as st
-from src.crew_factory import create_crew, ArticleOutput
-from typing import List
+from src.crew_factory import create_crew, ArticleOutput 
 
 # --- Configuração da Página ---
-st.set_page_config(
-    page_title="Sistema Multiagente para Geração de Artigos com CrewAI",
-    layout="wide",
-)
+st.set_page_config(page_title="Sistema Multiagente para Geração de Artigos com CrewAI", layout="wide") 
 
-# --- Cabeçalho / Descrição ---
-st.title("Sistema Multiagente para Geração de Artigos com CrewAI")
-st.markdown(
-    """
-    Ferramenta que usa agentes (CrewAI) para pesquisar na Wikipedia e gerar um artigo
-    com o Google Gemini. Informe um tópico e clique em "Gerar Artigo".
-    """
-)
+# --- CSS Customizado para Centralizar Imagem e Legenda ---
+st.markdown("""
+    <style>
+        /* Container para centralizar a imagem e a legenda dentro do infobox */
+        .infobox-image-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center; /* Centraliza horizontalmente */
+            text-align: center;   /* Centraliza texto da legenda */
+            margin-bottom: 10px; /* Espaçamento abaixo da imagem/legenda */
+        }
+        /* Estilo da legenda (similar ao <figcaption>) */
+        .infobox-image-container figcaption {
+            font-size: 0.9em;
+            color: #6c757d; /* Cor padrão de legenda do Streamlit */
+            padding: 2px 0;
+        }
+    </style>
+""", unsafe_allow_html=True)
 
-# --- Entrada do Usuário ---
-topic = st.text_input(
-    "Qual o tópico do artigo?",
-    placeholder="Ex: História do futebol do Brasil",
-)
+# --- Título e Descrição ---
+st.title("🤖 Sistema Multiagente para Geração de Artigos com CrewAI") 
+st.markdown("""
+    Este projeto usa agentes de IA (CrewAI) para escrever artigos automaticamente. 
+    Você fornece um tópico através de uma interface web simples (Streamlit), 
+    o sistema pesquisa na API da Wikipedia para obter contexto e usa o Google Gemini 
+    para gerar um artigo (no estilo NBR 6022), que é exibido diretamente na interface.
+""") 
 
-# URL da imagem placeholder usada no infobox direito
-placeholder_image_url = (
-    "https://upload.wikimedia.org/wikipedia/commons/thumb/6/65/No-Image-Placeholder.svg/1665px-No-Image-Placeholder.svg.png"
-)
+# --- Input do Usuário ---
+topic = st.text_input("Qual o tópico do artigo?", placeholder="Ex: Inteligência Artificial no Brasil") 
 
-# --- Botão de Ação: gera o artigo quando clicado ---
-if st.button("Gerar Artigo", type="primary"):
-    if not topic:
-        st.warning("Por favor, digite um tópico antes de gerar a estrutura.")
-    else:
-        with st.spinner(f"Pesquisando e gerando artigo sobre '{topic}'... Por favor, aguarde."):
+# URL da imagem placeholder
+placeholder_image_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/6/65/No-Image-Placeholder.svg/1665px-No-Image-Placeholder.svg.png"
+
+# --- Botão de Ação ---
+if st.button("Gerar Artigo", type="primary"): 
+    if topic:
+        with st.spinner(f"Pesquisando e gerando artigo sobre '{topic}'... Por favor, aguarde."): 
             try:
-                # Executa a rotina principal que retorna um ArticleOutput (Pydantic)
-                article: ArticleOutput = create_crew(topic)
-
-                # --- Ancoras para Sumário / Navegação interna ---
+                article: ArticleOutput = create_crew(topic) 
+                
+                # Define âncoras para o sumário (TOC)
                 anchor_top = "top"
                 anchor_summary = "resumo"
                 anchor_intro = "introducao"
@@ -47,51 +55,49 @@ if st.button("Gerar Artigo", type="primary"):
                 anchor_notes = "notas"
                 anchor_refs = "referencias"
 
-                # --- Layout principal: conteúdo + infobox lateral ---
-                col_main, col_infobox = st.columns([2.5, 1])
+                # --- 1. LAYOUT PRINCIPAL (Conteúdo e Infobox) ---
+                col_main, col_infobox = st.columns([2.5, 1]) 
 
-                # Conteúdo principal (col_main)
                 with col_main:
-                    st.markdown(f'<a name="{anchor_top}"></a>', unsafe_allow_html=True)
+                    # --- CONTEÚDO PRINCIPAL (Esquerda) ---
+                    
+                    st.markdown(f'<a name="{anchor_top}"></a>', unsafe_allow_html=True) 
                     st.title(article.title)
                     st.divider()
-
-                    # Resumo
+                    
                     st.markdown(f'<a name="{anchor_summary}"></a>', unsafe_allow_html=True)
                     st.subheader("Resumo")
                     st.write(article.summary)
-
-                    # Introdução (subtítulo dinâmico + conteúdo)
+                    
                     st.markdown(f'<a name="{anchor_intro}"></a>', unsafe_allow_html=True)
-                    st.header(article.introduction_subtitle)
+                    st.header(article.introduction_subtitle) 
                     st.write(article.introduction_content)
-
-                    # Desenvolvimento (subtítulo dinâmico + conteúdo)
-                    st.markdown(f'<a name="{anchor_dev}"></a>', unsafe_allow_html=True)
-                    st.header(article.development_subtitle)
-                    st.write(article.development_content)
-
-                    # Conclusão (subtítulo dinâmico + conteúdo)
+                    
+                    st.markdown(f'<a name="{anchor_dev}"></a>', unsafe_allow_html=True) 
+                    st.header(article.development_subtitle) 
+                    st.write(article.development_content) 
+                        
                     st.markdown(f'<a name="{anchor_conc}"></a>', unsafe_allow_html=True)
-                    st.header(article.conclusion_subtitle)
-                    st.write(article.conclusion_content)
+                    st.header(article.conclusion_subtitle) 
+                    st.write(article.conclusion_content) 
+                        
+                    st.divider() 
 
-                    st.divider()
-
-                    # Notas (palavras-chave)
+                    # --- Seções Finais (Notas e Referências) ---
+                    
                     st.markdown(f'<a name="{anchor_notes}"></a>', unsafe_allow_html=True)
                     st.subheader("Notas")
-                    keywords: List[str] = article.keywords or []
-                    keywords_str = ", ".join(keywords) if keywords else "Nenhuma palavra-chave"
+                    keywords_str = ", ".join(article.keywords)
                     st.caption(f"**Palavras-chave:** {keywords_str}.")
 
-                    # Referências (formatação ABNT simples)
                     st.markdown(f'<a name="{anchor_refs}"></a>', unsafe_allow_html=True)
                     st.subheader("Referências")
+                    
                     if article.source_title and article.source_url and article.access_date:
                         abnt_title = article.source_title.upper()
                         abnt_url = article.source_url
-                        abnt_access = article.access_date
+                        abnt_access = article.access_date.lower()
+                        
                         abnt_reference = (
                             f"{abnt_title}. In: WIKIPÉDIA: a enciclopédia livre. "
                             f"Disponível em: <{abnt_url}>. "
@@ -100,32 +106,53 @@ if st.button("Gerar Artigo", type="primary"):
                         st.markdown(abnt_reference)
                     else:
                         st.caption("Não foi possível gerar a referência ABNT (dados da fonte ausentes).")
-
+                    
                     st.success(f"Artigo gerado com sucesso! ({article.word_count} palavras)")
 
-                # Infobox lateral (col_infobox)
                 with col_infobox:
-                    with st.container():
+                    # --- INFOBOX (Direita) ---
+                    with st.container(border=True):
                         st.subheader(f"{topic.title()}")
-                        st.image(placeholder_image_url, width=300, caption="Imagem ilustrativa (placeholder)")
-                        st.markdown("**Informação geral**")
-                        st_name = article.source_title if article.source_title else "Sem Fonte"
+                        
+                        # Usa a imagem da Wikipedia se encontrada, senão usa o placeholder
+                        image_to_display = article.image_url if article.image_url else placeholder_image_url
+                        # Usa a legenda gerada pela IA, ou um fallback
+                        caption_to_display = article.image_caption if article.image_caption else "Imagem ilustrativa"
+                        
+                        # Usa HTML/CSS para centralizar a imagem e a legenda
+                        st.markdown(
+                            f"""
+                            <div class="infobox-image-container">
+                                <img src="{image_to_display}" width="300" style="aspect-ratio: auto 300 / 250; height: auto;">
+                                <figcaption>{caption_to_display}</figcaption>
+                            </div>
+                            """,
+                            unsafe_allow_html=True
+                        )
+                        
+                        st.markdown(f"**Informação geral**")
+                        st_name = "Sem Fonte"
+                        if article.source_title:
+                            st_name = article.source_title
                         st.caption(f"Artigo principal da fonte: {st_name}")
                         st.caption(f"Contagem de Palavras: {article.word_count}")
 
-                # --- Sumário na sidebar (expansível) ---
+                # --- 2. SUMÁRIO (Sidebar Esquerda - Pós Geração) ---
+                st.sidebar.divider()
+                
                 with st.sidebar.expander("Conteúdo"):
-                    # Pequeno CSS para estilo das âncoras do TOC
+                    # CSS Customizado (movido para o topo do script)
                     st.markdown(
                         """
                         <style>
                             .toc-link { text-decoration: none; color: inherit !important; }
                             .toc-item { margin-bottom: 5px; }
                         </style>
-                        """,
-                        unsafe_allow_html=True,
+                        """, 
+                        unsafe_allow_html=True
                     )
-
+                    
+                    # Links HTML (Sumário)
                     toc_html = f"""
                     <div class="toc-item"><a class="toc-link" href="#{anchor_top}">Início</a></div>
                     <div class="toc-item"><a class="toc-link" href="#{anchor_summary}">Resumo</a></div>
@@ -136,18 +163,16 @@ if st.button("Gerar Artigo", type="primary"):
                     <div class="toc-item"><a class="toc-link" href="#{anchor_refs}">Referências</a></div>
                     """
                     st.markdown(toc_html, unsafe_allow_html=True)
-
-            except ValueError as ve:
-                # Erros esperados (validação, entrada do agente, etc.)
-                st.error(f"Erro: {ve}")
+                
+            except ValueError as ve: 
+                 st.error(f"Erro: {ve}") 
             except Exception as e:
-                # Erro inesperado: mostrar exceção para debug
-                st.error("Ocorreu um erro inesperado durante a geração:")
-                st.exception(e)
+                st.error(f"Ocorreu um erro inesperado durante a geração:") 
+                st.exception(e) 
 
-# --- Rodapé e informações na sidebar ---
-st.sidebar.divider()
+    else:
+        st.warning("Por favor, digite um tópico antes de gerar a estrutura.")
+
+# --- Rodapé (SEMPRE VISÍVEL) ---
 st.sidebar.info("Desenvolvido por Andresantoss")
-st.sidebar.markdown(
-    "GitHub: [Repositório do Projeto](https://github.com/andresantoss/Sistema-Multiagentes-Geracao-de-Artigos-Utilizando-CrewAI-Andresantoss)"
-)
+st.sidebar.markdown("GitHub: [Repositório do Projeto](https://github.com/andresantoss/Sistema-Multiagentes-Geracao-de-Artigos-Utilizando-CrewAI-Andresantoss)")

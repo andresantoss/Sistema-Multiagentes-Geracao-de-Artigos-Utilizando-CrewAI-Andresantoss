@@ -1,142 +1,149 @@
 import requests
 from crewai.tools import BaseTool
 from dotenv import load_dotenv
-import os
-import re
+import os 
+import re 
+import json # Necessário para empacotar a saída
 
 class WikipediaSearchTool(BaseTool):
     """
-    Ferramenta CrewAI para buscar conteúdo na Wikipédia em português.
-
-    Comportamento:
-    1. Tenta obter o extrato (extracts) do artigo com título exato.
-    2. Se não encontrar, realiza busca textual (search) e pega o título mais relevante.
-    3. Tenta obter o extrato do título encontrado; se falhar, retorna o snippet (limpo de HTML).
-    4. Em todos os retornos bem-sucedidos, prefixa com "(Fonte Wikipedia: 'Título')".
-
-    Observações:
-    - Usa variável de ambiente WIKIPEDIA_CONTACT_INFO para o User-Agent (recomendado pela API).
-    - Retorna mensagens de erro legíveis quando há falha de rede ou resultado vazio.
+    Ferramenta para buscar na API da Wikipedia.
+    Tenta busca exata; se falhar, faz busca ampla (full-text).
+    Retorna um JSON string contendo o extrato, título da fonte, URL da imagem e legenda.
     """
-
     name: str = "Wikipedia Search Tool"
-    description: str = (
-        "Busca por um tópico na Wikipedia (pt). Primeiro tenta título exato; "
-        "se não, faz busca textual e retorna o extrato/snippet do resultado top."
-    )
+    description: str = ("Busca por um tópico na Wikipedia. Retorna um JSON string com o extrato do artigo, "
+                      "o título da fonte, a URL da imagem principal e uma legenda para a imagem.")
 
-    def _run(self, topic: str) -> str:
+    # --- Funções auxiliares movidas para dentro da classe ---
+
+    def _fetch_wikipedia_data(self, search_title: str, headers: dict) -> tuple[dict | None, str | None]:
         """
-        Executa a busca na API da Wikipédia (pt).
-
-        Args:
-            topic (str): termo ou título a ser pesquisado. Ex.: "Inteligência Artificial"
-
-        Returns:
-            str: texto com o extrato encontrado prefixado com a fonte, ou mensagem de erro/estado.
+        Tenta buscar o extrato E a imagem principal de um título específico.
+        Retorna um dicionário com os dados ou None, e uma mensagem de erro (se houver).
         """
-        load_dotenv()
-        contact_info = os.getenv("WIKIPEDIA_CONTACT_INFO")
-        if not contact_info:
-            # Fallback para identificar o agente nas requisições (recomendado pela Wikipédia)
-            contact_info = "https://github.com/andresantoss/Sistema-Multiagentes-Geracao-de-Artigos-Utilizando-CrewAI-Andresantoss"
-        headers = {'User-Agent': f'CrewAIAgent/1.0 ({contact_info})'}
-
-        base_url = "https://pt.wikipedia.org/w/api.php"
-
-        # --- 1) Tentativa de obter extrato por título exato ---
-        # params_extract: parâmetros para a chamada action=query&prop=extracts
-        params_extract = {
-            "action": "query",  # Ação: consulta de páginas.
-            "prop": "extracts", # Propriedade: extrato do conteúdo da página.
-            "exlimit": 1,       # Limita número de extratos retornados.
-            "explaintext": 1,   # retorna texto limpo (sem HTML)
-            "titles": topic,    # título exato a procurar
-            "format": "json",   # formato de resposta
-            "utf8": 1,          # garante codificação UTF-8
-            "redirects": 1,     # segue redirecionamentos automaticamente
-        }
-        try:
-            response_extract = requests.get(base_url, params=params_extract, headers=headers, timeout=10)
-            response_extract.raise_for_status()
-            data_extract = response_extract.json()
-            pages_extract = data_extract.get("query", {}).get("pages", {})
-
-            # pages é um dict onde a chave é o pageid; se pageid == "-1" => não encontrado
-            if pages_extract:
-                page_id_extract = next(iter(pages_extract))
-                if page_id_extract != "-1":
-                    extract = pages_extract[page_id_extract].get("extract")
-                    # Se há extrato, devolve com prefixo de fonte (título usado: topic)
-                    if extract:
-                        return f"(Fonte Wikipedia: '{topic}')\n\n{extract}"
-                    # Se não há extract (página sem conteúdo), continua para busca ampla
-        except requests.exceptions.RequestException as e:
-            # Erro de rede; devolve mensagem clara para o agente/usuário
-            return f"Erro de rede ao tentar busca exata: {e}"
-        except Exception as e:
-            return f"Erro inesperado na busca exata: {e}"
-
-        # --- 2) Busca ampla via lista de busca (search) ---
-        params_search = {
+        url = "https://pt.wikipedia.org/w/api.php"
+        params = {
             "action": "query",
-            "list": "search",
-            "srsearch": topic,
-            "srlimit": 1,
-            "srprop": "snippet",
+            "prop": "extracts|pageimages", # PEDE EXTRATO E IMAGEM
+            "piprop": "original",         # Pede a URL da imagem original (alta resolução)
+            "exlimit": 1,
+            "explaintext": 1,
+            "titles": search_title,
             "format": "json",
             "utf8": 1,
+            "redirects": 1
         }
-
-        found_title = None
-        found_snippet = None
         try:
-            response_search = requests.get(base_url, params=params_search, headers=headers, timeout=10)
-            response_search.raise_for_status()
-            data_search = response_search.json()
-            search_results = data_search.get("query", {}).get("search")
+            response = requests.get(url, params=params, headers=headers) 
+            response.raise_for_status() 
+            data = response.json()
+            pages = data.get("query", {}).get("pages", {})
+
+            if not pages: 
+                return None, f"Erro interno da API: Nenhuma 'page' retornada para '{search_title}'."
+
+            page_id = next(iter(pages))
+            if page_id == "-1": 
+                return None, None # Título exato não encontrado (não é um erro, apenas não encontrado)
+
+            page_data = pages[page_id]
+            extract = page_data.get("extract") 
+            
+            if not extract: 
+                return None, f"Erro: Artigo exato '{search_title}' encontrado, mas sem conteúdo (extrato)."
+
+            # Extrai informações da imagem (se existirem)
+            image_url = page_data.get("original", {}).get("source")
+            # Usa o nome do 'pageimage' (ex: Ficheiro:...) como legenda
+            image_caption = page_data.get("pageimage") 
+
+            # Retorna um dicionário com todos os dados
+            return {
+                "source_title": search_title,
+                "extract": extract,
+                "image_url": image_url,
+                "image_caption": image_caption
+            }, None # Sucesso
+
+        except requests.exceptions.RequestException as e: 
+            return None, f"Erro de rede ao buscar extrato/imagem: {e}"
+        except Exception as e: 
+            return None, f"Erro inesperado ao buscar extrato/imagem: {e}"
+
+    def _perform_full_text_search(self, search_term: str, headers: dict) -> tuple[str | None, str | None, str | None]:
+        """Realiza uma busca ampla e retorna o título e snippet do resultado mais relevante."""
+        url = "https://pt.wikipedia.org/w/api.php"
+        params = {
+            "action": "query",
+            "list": "search",
+            "srsearch": search_term,
+            "srlimit": 1,         
+            "srprop": "snippet",  
+            "format": "json",
+            "utf8": 1
+        }
+        try:
+            response = requests.get(url, params=params, headers=headers)
+            response.raise_for_status()
+            data = response.json()
+            search_results = data.get("query", {}).get("search")
             if search_results:
                 top_result = search_results[0]
-                found_title = top_result.get("title")
-                found_snippet = top_result.get("snippet")  # contém HTML (<span> etc.)
+                title = top_result.get("title")
+                snippet = top_result.get("snippet")
+                return title, snippet, None 
             else:
-                # Nenhum resultado relevante encontrado
-                return f"A pesquisa ampla na Wikipedia não encontrou artigos relevantes para '{topic}'."
+                return None, None, None # Nenhum resultado
         except requests.exceptions.RequestException as e:
-            return f"Erro de rede ao realizar busca ampla na Wikipedia: {e}"
+             return None, None, f"Erro de rede ao realizar busca ampla na Wikipedia: {e}"
         except Exception as e:
-            return f"Erro inesperado na busca ampla: {e}"
+            return None, None, f"Erro inesperado na busca ampla: {e}"
 
-        # --- 3) Tenta extrair o conteúdo do título encontrado na busca ampla ---
-        if found_title:
-            params_extract_found = params_extract.copy()
-            params_extract_found["titles"] = found_title
+    # --- MÉTODO PRINCIPAL _run ---
+    def _run(self, topic: str) -> str:
+        load_dotenv()
+        contact_info = os.getenv("WIKIPEDIA_CONTACT_INFO") 
+        if not contact_info:
+            contact_info = "https://github.com/andresantoss/Sistema-Multiagentes-Geracao-de-Artigos-Utilizando-CrewAI-Andresantoss" 
+        headers = {'User-Agent': f'CrewAIAgent/1.0 ({contact_info})'}
+        
+        output_data = {} # Dicionário para armazenar o resultado final
 
-            try:
-                response_extract_found = requests.get(base_url, params=params_extract_found, headers=headers, timeout=10)
-                response_extract_found.raise_for_status()
-                data_extract_found = response_extract_found.json()
-                pages_extract_found = data_extract_found.get("query", {}).get("pages", {})
+        # 1. Tenta busca exata (que agora retorna dict)
+        data_dict, error = self._fetch_wikipedia_data(topic, headers)
+        
+        if data_dict:
+            # Sucesso na busca exata
+            output_data = data_dict
+        elif error and "sem conteúdo" not in error: 
+              return json.dumps({"error": error}) # Retorna erro de rede/API
+              
+        # 2. Se a busca exata falhou (data_dict é None e error é None ou "sem conteúdo"), faz busca ampla
+        else:
+            found_title, found_snippet, search_error = self._perform_full_text_search(topic, headers)
+            
+            if search_error: return json.dumps({"error": search_error})             
+            if not found_title: 
+                return json.dumps({"error": f"A pesquisa ampla na Wikipedia não encontrou artigos relevantes para '{topic}'."})
 
-                if pages_extract_found:
-                    page_id_extract_found = next(iter(pages_extract_found))
-                    if page_id_extract_found != "-1":
-                        extract_found = pages_extract_found[page_id_extract_found].get("extract")
-                        if extract_found:
-                            return f"(Fonte Wikipedia: '{found_title}')\n\n{extract_found}"
-                # Se não obteve extract, seguirá para fallback de snippet abaixo
-            except (requests.exceptions.RequestException, Exception):
-                # Não interrompe o fluxo; usaremos o snippet como fallback
-                pass
+            # 3. Tenta buscar extrato E IMAGEM do título encontrado na busca ampla
+            data_dict_found, final_error = self._fetch_wikipedia_data(found_title, headers) 
 
-            # --- Fallback: usar snippet da busca ampla se disponível ---
-            if found_snippet:
-                # Remove tags HTML do snippet e torna legível
-                clean_snippet = re.sub(r'<[^>]+>', '', found_snippet).strip()
-                # Indica que é um snippet e não o extrato completo
-                return f"(Fonte Wikipedia (Snippet da Busca): '{found_title}')\n\n...{clean_snippet}..."
+            if data_dict_found:
+                # Sucesso na busca do artigo encontrado
+                output_data = data_dict_found
             else:
-                return f"A pesquisa ampla na Wikipedia encontrou o artigo '{found_title}', mas não foi possível obter seu conteúdo (extrato ou snippet)."
-
-        # Caso extremo: não encontrou título e não houve exceção clara
-        return f"Erro inesperado: A busca ampla por '{topic}' não produziu resultados nem erros explícitos."
+                # Fallback: Usa o snippet (sem imagem)
+                clean_snippet = re.sub('<[^<]+?>', '', found_snippet or "") 
+                output_data = {
+                    "source_title": found_title,
+                    "extract": f"...{clean_snippet}...",
+                    "image_url": None,
+                    "image_caption": "Snippet da Busca (sem imagem)"
+                }
+                if final_error:
+                    print(f"AVISO: Falha ao buscar extrato/imagem de '{found_title}': {final_error}. Usando snippet.")
+        
+        # Retorna o dicionário de dados como um JSON string
+        return json.dumps(output_data, ensure_ascii=False)
