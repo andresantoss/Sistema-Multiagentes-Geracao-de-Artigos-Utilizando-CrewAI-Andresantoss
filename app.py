@@ -1,189 +1,208 @@
 import os
+from datetime import datetime
+from urllib.parse import quote
+
 import streamlit as st
 from src.crew_factory import create_crew, ArticleOutput
+from google.genai.errors import ServerError
 
-# --- Configuração da Página ---
-st.set_page_config(page_title="Sistema Multiagente para Geração de Artigos com CrewAI", layout="wide") 
+# ---------- Configuração da página e CSS ----------
+st.set_page_config(page_title="Sistema Multiagente - CrewAI", layout="wide")
 
-# --- CSS Customizado (CORREÇÃO ÂNCORA + CENTRALIZAÇÃO INFOBOX) ---
-st.markdown("""
+st.markdown(
+    """
     <style>
-        /* anchor  */
-        div[id] {
-            scroll-margin-top: 100px; 
-        }
-        
-        /* Centraliza o título do infobox */
-        .infobox-title {
-            text-align: center;
-        }
+        /* Espaçamento superior para evitar corte ao navegar por âncoras */
+        div[id] { scroll-margin-top: 70px; }
 
-        /* Container para centralizar a imagem e a legenda */
-        .infobox-image-container {
-            display: flex;
-            flex-direction: column;
-            align-items: center; 
-            text-align: center;   
-            margin-bottom: 10px; 
-        }
-            
-        .infobox-image-container figcaption {
-            font-size: 0.9em;
-            color: #6c757d; 
-            padding: 2px 0;
-        }
+        /* Infobox */
+        .infobox-title { text-align: center; margin-bottom: 6px; }
+        .infobox-image-container { display:flex; flex-direction:column; align-items:center; text-align:center; }
+        .infobox-source { text-align:center; font-size:0.9em; color:#6c757d; margin-top:6px; }
 
-        /* Estilos do Sumário (TOC) */
-        .toc-link { 
-            text-decoration: none; 
-            color: inherit !important; 
-        }
-        .toc-item { 
-            margin-bottom: 5px; 
-        }
+        /* TOC */
+        .toc-link { text-decoration:none; color:inherit !important; }
+        .toc-item { margin-bottom:5px; }
     </style>
-""", unsafe_allow_html=True)
+    """,
+    unsafe_allow_html=True,
+)
 
-# --- Título e Descrição ---
-st.title("🤖 Sistema Multiagente para Geração de Artigos com CrewAI") 
-st.markdown("""
-    Este projeto usa agentes de IA (CrewAI) para escrever artigos automaticamente. Você fornece um tópico através de uma interface web simples (Streamlit), o sistema pesquisa na API da Wikipedia para obter contexto e usa o Google Gemini para gerar um artigo de pelo menos 300 palavras, que é exibido diretamente na interface.
-""") 
+# ---------- Texto explicativo ----------
+st.title("🤖 Sistema Multiagente para Geração de Artigos com CrewAI")
+st.markdown(
+    "Forneça um tópico e gere um artigo (mínimo 300 palavras). O sistema consulta a Wikipedia e gera o conteúdo."
+)
 
-# --- Input do Usuário ---
-topic = st.text_input("Qual o tópico do artigo?", placeholder="Ex: Inteligência Artificial no Brasil") 
-
-# URL da imagem placeholder REMOTO (fallback)
+# ---------- Configurações e paths ----------
+topic = st.text_input("Qual o tópico do artigo?", placeholder="Ex: Inteligência Artificial")
 remote_placeholder_image_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/6/65/No-Image-Placeholder.svg/1665px-No-Image-Placeholder.svg.png"
+placeholder_image_path = os.path.join("src", "No-Image-Placeholder.svg.png")  # relativo ao workspace
 
-# Caminho local do placeholder solicitado (Windows). Use r-string para evitar escape de \
-placeholder_image_path = r"src\No-Image-Placeholder.svg.png"
+# ---------- Helpers reutilizáveis ----------
+def _select_image(article: ArticleOutput) -> tuple[str | None, str]:
+    """
+    Retorna (image_path_or_url, caption) escolhendo entre:
+      - article.image_url
+      - placeholder local
+      - fallback remoto
+    """
+    if getattr(article, "image_url", None):
+        return article.image_url, (getattr(article, "image_caption", None) or "Imagem obtida da Wikipedia")
+    if os.path.exists(placeholder_image_path):
+        return placeholder_image_path, "Placeholder local"
+    return remote_placeholder_image_url, "Placeholder remoto"
 
-# --- Botão de Ação ---
-if st.button("Gerar Artigo", type="primary"): 
-    if topic:
-        with st.spinner(f"Pesquisando e gerando artigo sobre '{topic}'... Por favor, aguarde."): 
+def _render_centered_image(path_or_url: str, width: int = 300):
+    """
+    Renderiza imagem centralizada. Usa st.image para arquivos locais/bytes; para URLs usa HTML.
+    """
+    if not path_or_url:
+        return
+    if os.path.exists(path_or_url):
+        st.image(path_or_url, width=width)
+    else:
+        st.markdown(f'<div class="infobox-image-container"><img src="{path_or_url}" width="{width}" style="height:auto; max-width:100%;"></div>', unsafe_allow_html=True)
+
+def _build_toc(anchors: dict, article: ArticleOutput) -> str:
+    """
+    Gera HTML simples do sumário (TOC). Anchors é dict com chaves lógicas -> id.
+    """
+    return f"""
+    <div class="toc-item"><a class="toc-link" href="#{anchors['top']}">Início</a></div>
+    <div class="toc-item"><a class="toc-link" href="#{anchors['summary']}">Resumo</a></div>
+    <div class="toc-item"><a class="toc-link" href="#{anchors['intro']}">{article.introduction_subtitle}</a></div>
+    <div class="toc-item"><a class="toc-link" href="#{anchors['dev']}">{article.development_subtitle}</a></div>
+    <div class="toc-item"><a class="toc-link" href="#{anchors['conc']}">{article.conclusion_subtitle}</a></div>
+    <div class="toc-item"><a class="toc-link" href="#{anchors['notes']}">Notas</a></div>
+    <div class="toc-item"><a class="toc-link" href="#{anchors['refs']}">Referências</a></div>
+    """
+
+def _render_image_source_line(article: ArticleOutput):
+    """
+    Exibe a linha de Fonte abaixo da imagem no formato:
+      Fonte: Wikipédia, <ANO_ATUAL>.
+    O texto 'Wikipédia, ANO' é link para article.source_url (fallback image_url).
+    """
+    link_target = article.source_url or getattr(article, "image_url", None)
+    if not link_target:
+        return
+    year = datetime.now().year
+    link_text = f"Wikipédia, {year}"
+    st.markdown(f'<div class="infobox-source">Fonte: <a href="{link_target}" target="_blank" rel="noopener noreferrer">{link_text}</a>.</div>', unsafe_allow_html=True)
+
+def _render_abnt_reference(article: ArticleOutput):
+    """
+    Gera referência ABNT básica usando source_title/source_url/access_date quando disponíveis.
+    """
+    if article.source_title and article.source_url and article.access_date:
+        title_abnt = article.source_title.upper()
+        url = article.source_url
+        access = article.access_date.lower()
+        st.markdown(f"{title_abnt}. In: WIKIPÉDIA: a enciclopédia livre. Disponível em: <{url}>. Acesso em: {access}.")
+    else:
+        st.caption("Não foi possível gerar a referência ABNT (dados da fonte ausentes).")
+
+# ---------- Ação principal ----------
+if st.button("Gerar Artigo", type="primary"):
+    if not topic:
+        st.warning("Por favor, digite um tópico antes de gerar a estrutura.")
+    else:
+        with st.spinner(f"Pesquisando e gerando artigo sobre '{topic}'..."):
             try:
-                article: ArticleOutput = create_crew(topic) 
-                
-                # Define âncoras para o sumário (TOC)
-                anchor_top = "inicio"
-                anchor_summary = "resumo"
-                anchor_intro = article.introduction_subtitle
-                anchor_dev = article.development_subtitle
-                anchor_conc = article.conclusion_subtitle
-                anchor_notes = "notas"
-                anchor_refs = "referencias"
+                # Geração via crew_factory (pode elevar ValueError / ServerError)
+                article: ArticleOutput = create_crew(topic)
 
-                # --- 1. LAYOUT PRINCIPAL (Conteúdo e Infobox) ---
-                col_main, col_infobox = st.columns([2.5, 1]) 
+                # âncoras simples
+                anchors = {
+                    "top": "top",
+                    "summary": "resumo",
+                    "intro": "introducao",
+                    "dev": "desenvolvimento",
+                    "conc": "conclusao",
+                    "notes": "notas",
+                    "refs": "referencias",
+                }
 
+                # Layout: conteúdo principal + infobox lateral
+                col_main, col_infobox = st.columns([2.5, 1])
+
+                # ----- Conteúdo principal -----
                 with col_main:
-                    # --- CONTEÚDO PRINCIPAL (Esquerda) ---
-                    
-                    # Usa a estrutura de âncora DIV + Título
-                    st.markdown(f'<div id="{anchor_top}"></div>', unsafe_allow_html=True)
+                    st.markdown(f'<div id="{anchors["top"]}"></div>', unsafe_allow_html=True)
                     st.markdown(f'<h1>{article.title}</h1>', unsafe_allow_html=True)
                     st.divider()
-                    
-                    st.markdown(f'<div id="{anchor_summary}"></div>', unsafe_allow_html=True)
-                    st.markdown(f'<h2>Resumo</h2>', unsafe_allow_html=True)
+
+                    st.markdown(f'<div id="{anchors["summary"]}"></div>', unsafe_allow_html=True)
+                    st.markdown("<h2>Resumo</h2>", unsafe_allow_html=True)
                     st.write(article.summary)
-                    
-                    st.markdown(f'<div id="{anchor_intro}"></div>', unsafe_allow_html=True)
-                    st.markdown(f'<h2>{article.introduction_subtitle}</h2>', unsafe_allow_html=True) 
+
+                    st.markdown(f'<div id="{anchors["intro"]}"></div>', unsafe_allow_html=True)
+                    st.markdown(f'<h2>{article.introduction_subtitle}</h2>', unsafe_allow_html=True)
                     st.write(article.introduction_content)
-                    
-                    st.markdown(f'<div id="{anchor_dev}"></div>', unsafe_allow_html=True)
-                    st.markdown(f'<h2>{article.development_subtitle}</h2>', unsafe_allow_html=True) 
-                    st.write(article.development_content) 
-                        
-                    st.markdown(f'<div id="{anchor_conc}"></div>', unsafe_allow_html=True)
+
+                    st.markdown(f'<div id="{anchors["dev"]}"></div>', unsafe_allow_html=True)
+                    st.markdown(f'<h2>{article.development_subtitle}</h2>', unsafe_allow_html=True)
+                    st.write(article.development_content)
+
+                    st.markdown(f'<div id="{anchors["conc"]}"></div>', unsafe_allow_html=True)
                     st.markdown(f'<h2>{article.conclusion_subtitle}</h2>', unsafe_allow_html=True)
-                    st.write(article.conclusion_content) 
-                        
+                    st.write(article.conclusion_content)
+
                     st.divider()
+                    st.markdown(f'<div id="{anchors["notes"]}"></div>', unsafe_allow_html=True)
+                    st.markdown("<h2>Notas</h2>", unsafe_allow_html=True)
+                    st.caption(f"**Palavras-chave:** {', '.join(article.keywords)}.")
+                    st.markdown(f'<div id="{anchors["refs"]}"></div>', unsafe_allow_html=True)
+                    st.markdown("<h2>Referências</h2>", unsafe_allow_html=True)
+                    _render_abnt_reference(article)
 
-                    # --- Seções Finais (Notas e Referências) ---
-                    
-                    st.markdown(f'<div id="{anchor_notes}"></div>', unsafe_allow_html=True)
-                    st.markdown(f'<h2>Notas</h2>', unsafe_allow_html=True)
-                    keywords_str = ", ".join(article.keywords)
-                    st.caption(f"**Palavras-chave:** {keywords_str}.")
-
-                    st.markdown(f'<div id="{anchor_refs}"></div>', unsafe_allow_html=True)
-                    st.markdown(f'<h2>Referências</h2>', unsafe_allow_html=True)
-                    
-                    if article.source_title and article.source_url and article.access_date:
-                        abnt_title = article.source_title.upper()
-                        abnt_url = article.source_url
-                        abnt_access = article.access_date.lower()
-                        
-                        abnt_reference = (
-                            f"{abnt_title}. In: WIKIPÉDIA: a enciclopédia livre. "
-                            f"Disponível em: <{abnt_url}>. "
-                            f"Acesso em: {abnt_access}."
-                        )
-                        st.markdown(abnt_reference)
-                    else:
-                        st.caption("Não foi possível gerar a referência ABNT (dados da fonte ausentes).")
-                    
                     st.success(f"Artigo gerado com sucesso! ({article.word_count} palavras)")
 
+                # ----- Infobox lateral -----
                 with col_infobox:
-                    # Infobox simples (Streamlit container sem border param)
-                    st.markdown(f'<h3 class="infobox-title">{topic.title()}</h3>', unsafe_allow_html=True)
+                    # título do infobox = legenda da imagem (ou tópico)
+                    infobox_title = getattr(article, "image_caption", None) or topic.title()
+                    st.markdown(f'<h3 class="infobox-title">{infobox_title}</h3>', unsafe_allow_html=True)
 
-                    # Escolhe imagem: primeiro tenta image retornada pelo ArticleOutput,
-                    # depois arquivo local placeholder, por fim URL remota fallback.
-                    image_to_display = None
-                    caption_to_display = "Imagem ilustrativa"
+                    image_path, _caption = _select_image(article)
+                    _render_centered_image(image_path, width=300)
 
-                    if getattr(article, "image_url", None):
-                        image_to_display = article.image_url
-                        caption_to_display = getattr(article, "image_caption", "Imagem obtida da Wikipedia")
-                    elif os.path.exists(placeholder_image_path):
-                        image_to_display = placeholder_image_path
-                        caption_to_display = "Placeholder local"
-                    else:
-                        image_to_display = remote_placeholder_image_url
-                        caption_to_display = "Placeholder remoto"
+                    # Fonte abaixo da imagem (centralizada)
+                    _render_image_source_line(article)
 
-                    # Exibe imagem usando st.image (funciona com caminho local ou URL)
-                    st.image(image_to_display, width=300, caption=caption_to_display)
-
+                    st.divider()
                     st.markdown("**Informação geral**")
                     st.caption(f"Artigo principal da fonte: {article.source_title or 'Sem Fonte'}")
                     st.caption(f"Contagem de Palavras: {article.word_count}")
 
-                # --- 2. SUMÁRIO (Sidebar Esquerda - Pós Geração) ---
-                st.sidebar.divider()
-                
+                # ----- Sumário na sidebar -----
                 with st.sidebar.expander("Conteúdo"):
-                    # Links HTML (Sumário)
-                    toc_html = f"""
-                    <div class="toc-item"><a class="toc-link" href="#{anchor_top}">Início</a></div>
-                    <div class="toc-item"><a class="toc-link" href="#{anchor_summary}">Resumo</a></div>
-                    <div class="toc-item"><a class="toc-link" href="#{anchor_intro}">{article.introduction_subtitle}</a></div>
-                    <div class="toc-item"><a class="toc-link" href="#{anchor_dev}">{article.development_subtitle}</a></div>
-                    <div class="toc-item"><a class="toc-link" href="#{anchor_conc}">{article.conclusion_subtitle}</a></div>
-                    <div class="toc-item"><a class="toc-link" href="#{anchor_notes}">Notas</a></div>
-                    <div class="toc-item"><a class="toc-link" href="#{anchor_refs}">Referências</a></div>
-                    """
-                    st.markdown(toc_html, unsafe_allow_html=True)
-                
-            except ValueError as ve: 
-                 st.error(f"Erro: {ve}") 
+                    st.markdown(_build_toc(anchors, article), unsafe_allow_html=True)
+
+            except ValueError as ve:
+                st.error(f"Erro: {ve}")
+                with st.expander("Detalhes (ValueError)"):
+                    st.exception(ve)
+
+            except ServerError as se:
+                # Tratamento para erros 5xx do LLM
+                err = str(se)
+                if "503" in err and "overloaded" in err:
+                    st.error("API do LLM sobrecarregada (503). Tente novamente mais tarde.")
+                else:
+                    st.error("Erro no serviço de geração. Veja detalhes.")
+                with st.expander("Detalhes (ServerError)"):
+                    st.exception(se)
+
             except Exception as e:
-                st.error(f"Ocorreu um erro inesperado durante a geração:") 
-                st.exception(e) 
+                st.error("Ocorreu um erro inesperado.")
+                with st.expander("Detalhes (Exception)"):
+                    st.exception(e)
 
-    else:
-        st.warning("Por favor, digite um tópico antes de gerar a estrutura.")
-
-# --- Rodapé (SEMPRE VISÍVEL) ---
+# ---------- Rodapé ----------
+st.sidebar.divider()
 st.sidebar.info("Desenvolvido por Andresantoss")
-st.sidebar.markdown("GitHub: [Repositório do Projeto](https://github.com/andresantoss/Sistema-Multiagentes-Geracao-de-Artigos-Utilizando-CrewAI-Andresantoss)")
-
-# Comandos de execução
-# streamlit run app.py
+st.sidebar.markdown(
+    "GitHub: [Repositório do Projeto](https://github.com/andresantoss/Sistema-Multiagentes-Geracao-de-Artigos-Utilizando-CrewAI-Andresantoss)"
+)
