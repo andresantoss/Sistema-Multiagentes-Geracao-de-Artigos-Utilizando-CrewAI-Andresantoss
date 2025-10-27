@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field, ValidationError
 from crewai import Agent, Task, Crew, Process
 from src.tools.wikipedia_tool import WikipediaSearchTool
 
-# --- Modelo de saída ---
+# --- Modelo de saída (inalterado) ---
 class ArticleOutput(BaseModel):
     title: str
     summary: str
@@ -31,6 +31,7 @@ class ArticleOutput(BaseModel):
 
 wikipedia_tool = WikipediaSearchTool()
 
+# --- Funções helper (inalteradas) ---
 def extract_json_from_text(text: str) -> str | None:
     if not text:
         return None
@@ -40,6 +41,7 @@ def extract_json_from_text(text: str) -> str | None:
 def _count_words_in_fields(d: dict, fields: List[str]) -> int:
     return sum(len((d.get(f) or "").split()) for f in fields)
 
+# --- Função create_crew (MODIFICADA) ---
 def create_crew(topic: str) -> ArticleOutput:
     load_dotenv()
     if not os.getenv("GEMINI_API_KEY"):
@@ -100,48 +102,78 @@ def create_crew(topic: str) -> ArticleOutput:
     )
 
     crew = Crew(agents=[researcher, writer], tasks=[research_task, write_task], process=Process.sequential, verbose=True)
-    result = crew.kickoff(inputs={'topic': topic})
+    
+    # --- INÍCIO DAS MUDANÇAS: LOOP DE TENTATIVA ---
+    max_attempts = 3
+    attempts = 0
+    last_validation_error = None
 
-    if not result or not getattr(result, "raw", None):
-        raise ValueError("A CrewAI não retornou resultado bruto válido.")
+    while attempts < max_attempts:
+        attempts += 1
+        if attempts > 1:
+            print(f"--- Tentativa {attempts}/{max_attempts} para o tópico: '{topic}' (Erro anterior: {last_validation_error}) ---")
 
-    raw = result.raw
-    json_str = extract_json_from_text(raw)
-    if not json_str:
-        raise ValueError(f"Não foi possível extrair JSON da resposta do agente.\nResposta:\n{raw}")
-
-    try:
-        data = json.loads(json_str)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"Erro ao decodificar JSON: {e}\nJSON extraído:\n{json_str}") from e
-
-    # Normalizações agrupadas
-    if isinstance(data.get('keywords'), str):
-        data['keywords'] = [k.strip() for k in data['keywords'].split(',') if k.strip()]
-    for k in ['introduction_subtitle', 'development_subtitle', 'conclusion_subtitle']:
-        if isinstance(data.get(k), str):
-            data[k] = data[k].strip()
-    # campos opcionais garantidos como chaves presentes
-    for k in ['source_title', 'source_url', 'access_date', 'image_url', 'image_caption']:
-        v = data.get(k)
-        if v == '':
-            data[k] = None
-        data.setdefault(k, None)
-    if isinstance(data.get('word_count'), str):
         try:
-            data['word_count'] = int(data['word_count'].strip())
-        except Exception:
-            pass
+            # Todo o processo de kickoff e validação agora está dentro do 'try'
+            result = crew.kickoff(inputs={'topic': topic})
 
-    try:
-        parsed = ArticleOutput.model_validate(data)
-    except ValidationError as e:
-        raise ValueError(f"Formato JSON inválido: {e}\nJSON:\n{json.dumps(data, ensure_ascii=False, indent=2)}") from e
+            if not result or not getattr(result, "raw", None):
+                raise ValueError("A CrewAI não retornou resultado bruto válido.")
 
-    # Valida contagem mínima
-    fields = ['summary', 'introduction_content', 'development_content', 'conclusion_content']
-    real_count = _count_words_in_fields(parsed.model_dump(), fields)
-    if real_count < 300:
-        raise ValueError(f"Artigo insuficiente: {real_count} palavras (mínimo 300).")
+            raw = result.raw
+            json_str = extract_json_from_text(raw)
+            if not json_str:
+                raise ValueError(f"Não foi possível extrair JSON da resposta do agente.\nResposta:\n{raw}")
 
-    return parsed
+            try:
+                data = json.loads(json_str)
+            except json.JSONDecodeError as e:
+                raise ValueError(f"Erro ao decodificar JSON: {e}\nJSON extraído:\n{json_str}") from e
+
+            # Bloco de normalizações (inalterado)
+            if isinstance(data.get('keywords'), str):
+                data['keywords'] = [k.strip() for k in data['keywords'].split(',') if k.strip()]
+            for k in ['introduction_subtitle', 'development_subtitle', 'conclusion_subtitle']:
+                if isinstance(data.get(k), str):
+                    data[k] = data[k].strip()
+            for k in ['source_title', 'source_url', 'access_date', 'image_url', 'image_caption']:
+                v = data.get(k)
+                if v == '':
+                    data[k] = None
+                data.setdefault(k, None)
+            if isinstance(data.get('word_count'), str):
+                try:
+                    data['word_count'] = int(data['word_count'].strip())
+                except Exception:
+                    pass
+
+            try:
+                parsed = ArticleOutput.model_validate(data)
+            except ValidationError as e:
+                raise ValueError(f"Formato JSON inválido: {e}\nJSON:\n{json.dumps(data, ensure_ascii=False, indent=2)}") from e
+
+            # Valida contagem mínima
+            fields = ['summary', 'introduction_content', 'development_content', 'conclusion_content']
+            real_count = _count_words_in_fields(parsed.model_dump(), fields)
+            
+            if real_count < 300:
+                # Em vez de falhar, levanta um ValueError que será pego abaixo
+                raise ValueError(f"Artigo insuficiente: {real_count} palavras (mínimo 300).")
+
+            # SUCESSO: Se chegou aqui, a validação passou.
+            return parsed
+
+        except ValueError as ve:
+            # Captura o erro (JSON, Pydantic, ou o < 300 palavras)
+            last_validation_error = ve
+            print(f"Erro de validação na tentativa {attempts}: {ve}")
+            # O loop 'while' continuará para a próxima tentativa
+        
+        except Exception as e:
+            # Captura outros erros inesperados do kickoff
+            last_validation_error = e
+            print(f"Erro inesperado na tentativa {attempts}: {e}")
+            # O loop 'while' continuará
+
+    # Se o loop terminar, todas as tentativas falharam.
+    raise ValueError(f"Falha ao gerar artigo para '{topic}' após {max_attempts} tentativas. Último erro: {last_validation_error}")
